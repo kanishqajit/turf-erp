@@ -1,0 +1,17 @@
+{
+  "name": "turf-operations",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "node --watch server.mjs",
+    "start": "node server.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs",
+    "seed:volume": "node scripts/seed-volume.mjs",
+    "test": "node --test",
+    "check": "node --check app.js && for file in client/*.js client/views/*.js scripts/*.mjs; do node --check \"$file\"; done && node --check server.mjs && node --check server/store.mjs && node --test"
+  }
+}
