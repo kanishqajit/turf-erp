@@ -3,8 +3,8 @@ import { TODAY_DI } from './datetime.js';
 export const blankForm = () => ({ team:'', contact:'', notes:'', pay:'Payment at venue' });
 
 export const S = {
-  ready:false, busy:false, user:null, csrf:'', authError:'', apiError:'',
-  bookings:[], holds:[], blocks:[], audit:[],
+  ready:false, busy:false, user:null, csrf:'', authError:'', apiError:'', lastSyncedAt:0,
+  bookings:[], holds:[], blocks:[], audit:[], accounts:[], paymentEvents:[], users:[], auditError:'',
   settings:{ depositAmount:500 }, depositDraft:'500', depositDirty:false,
   view:'availability', pitch:0, weekOffset:0, dayIndex:TODAY_DI, sessionsMode:'now',
   showPitchColors:false, pitchColors:{}, colorPickerOpen:null, collapsedBands:{},
@@ -12,9 +12,14 @@ export const S = {
   formOpen:false, form:blankForm(), blockOpen:false, blockReason:'', holdPct:0,
   confirm:null, dur:60, startOffset:0,
   focusSession:null, timerAsk:null, doneAsk:null, blockDetail:null,
-  advAsk:null, advVal:'', advMode:'advance', advPayMode:'Cash', advReason:'',
+  advAsk:null, advVal:'', advMode:'advance', advPayMode:'Cash', advReason:'', advReference:'',
+  accountFocus:null, accountHistory:null, accountSearch:'', accountStatus:'open', accountFrom:'', accountTo:'',
+  refundAsk:null, refundVal:'', refundPayMode:'Cash', refundReason:'', refundReference:'',
+  pendingKeys:{},
   actionAsk:null, actionReason:'',
+  staffAsk:null, staffReason:'',
   newName:'', newEmail:'', newRole:'operator', newPassword:'',
+  currentPassword:'', replacementPassword:'', confirmPassword:'', passwordError:'',
   customOpen:false, cDay:TODAY_DI, cStart:'17:30', cDur:60, cName:'', cPhone:'', cPay:'Payment at venue',
   groupOpen:false, gType:'Corporate', gPitch:0, gStart:'11:00', gDur:90,
   gDates:[], gName:'', gPhone:'', gNotes:'', gPay:'Payment at venue',

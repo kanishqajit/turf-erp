@@ -16,23 +16,25 @@ export function buildSessions(){
       const pitch = PITCHES[s.pitch];
       const running = s.status === 'running', upcoming = s.status === 'upcoming', done = s.status === 'done';
       const left = s.end - now, over = running && left < 0;
+      const late = upcoming && now > s.start, elapsedSlot = upcoming && now >= s.end;
       const elapsed = running ? now - (s.startedAt || s.start) : 0;
       const pct = running ? Math.max(0, Math.min(100, ((now - s.start) / (s.end - s.start)) * 100)) : done ? 100 : 0;
       const amount = s.amount, unpaid = s.pay !== 'Payment done', duePay = done && unpaid;
       const actions = (running
         ? [{label:'End match',primary:true,act:'ask-done'},{label:'+30 min',act:'plus30'}]
-        : upcoming ? [{label:'Start match',primary:true,act:'mark-started'},{label:'No-show',act:'noshow'}]
+        : upcoming ? (elapsedSlot?[{label:'Resolve no-show',primary:true,act:'noshow'}]
+          :[{label:'Start match',primary:true,act:'mark-started'},{label:'No-show',act:'noshow'}])
         : s.status === 'noshow' ? [{label:'Undo no-show',primary:true,act:'undo-noshow'}] : [])
         .concat(unpaid && s.status !== 'noshow' ? [{label:'Collect money',primary:duePay,act:'collect'}] : []);
       return {
         raw:s, id:s.id, pitchIndex:s.pitch, team:s.team, contact:s.contact,
         pitchName:pitch.name + ' · ' + pitch.sub, range:rng12(s.start,s.end), status:s.status,
-        running, upcoming, done, over, unpaid, duePay, pct, amount,
+        running, upcoming, done, over, late, elapsedSlot, unpaid, duePay, pct, amount,
         awaitingPay:duePay, focused:S.focusSession === s.id,
-        rowCls:over ? 'over' : running ? 'play' : duePay ? 'duepay' : upcoming ? 'upcoming' : s.status === 'noshow' ? 'noshow' : 'done',
-        statusLabel:over ? 'Overtime' : running ? 'In play' : upcoming ? 'Up next'
+        rowCls:over ? 'over' : running ? 'play' : duePay ? 'duepay' : late ? 'over' : upcoming ? 'upcoming' : s.status === 'noshow' ? 'noshow' : 'done',
+        statusLabel:over ? 'Overtime' : running ? 'In play' : elapsedSlot ? 'Unresolved' : late ? 'Late start' : upcoming ? 'Up next'
           : done ? (unpaid ? 'Payment due' : 'Completed') : 'No-show',
-        statusCls:over ? 'over' : running ? 'play' : duePay ? 'duepay' : '',
+        statusCls:over||late ? 'over' : running ? 'play' : duePay ? 'duepay' : '',
         sourceLabel:s.source === 'app' ? 'App' : 'Counter', sourceCls:s.source === 'app' ? 'via-app' : '',
         payLabel:s.pay === 'Advance paid'
           ? money(s.collected || 0) + ' of ' + money(amount - (s.discount || 0)) + ' paid · '
@@ -42,7 +44,9 @@ export function buildSessions(){
           : s.pay,
         amountSuffix:s.pay === 'Advance paid' || s.pay === 'Payment done' ? '' : ' · ' + money(amount),
         clock:running ? (over ? '+' + durTxt(-left) + ' over' : durTxt(left) + ' left')
-          : upcoming ? 'starts in ' + durTxt(Math.max(0,s.start - now))
+          : elapsedSlot ? 'ended ' + durTxt(now-s.end) + ' ago · unresolved'
+          : late ? durTxt(now-s.start) + ' late'
+          : upcoming ? 'starts in ' + durTxt(s.start - now)
           : done ? 'ended ' + t12(s.endedAt || s.end) : '—',
         elapsedLabel:running ? durTxt(Math.max(0,elapsed)) + ' played · ' : '',
         liveNote:duePay ? 'Match finished · collect payment to clear' : '',
@@ -107,7 +111,7 @@ export function viewSessions(){
   const overCount = cards.filter(card => card.over).length;
   const dueCount = cards.filter(card => card.awaitingPay).length;
   const upcomingAll = cards.filter(card => card.upcoming).sort((a,b) => a.raw.start - b.raw.start);
-  const next = upcomingAll[0];
+  const next = upcomingAll.find(card=>!card.late);
   const toCollect = collectTotal();
   const activeMode = SESSION_MODES.some(([mode]) => mode === S.sessionsMode) ? S.sessionsMode : 'now';
   const statbar = `<div class="statbar">${[
@@ -122,9 +126,9 @@ export function viewSessions(){
     ['OVER','Overtime','var(--red)','#fff',false],['DUE','Payment due','var(--amber)','var(--ink)',false],
     ['DONE','Finished','var(--edge2)','var(--ink)',false],['₹','Payment received','var(--green)','#fff',true]].map(([mark,text,background,color,dot]) =>
       `<span><b class="${dot ? 'dot' : ''}" style="background:${background};color:${color}">${mark}</b>${text}</span>`).join('');
-  const attention = cards.filter(card => card.running || card.duePay);
+  const attention = cards.filter(card => card.running || card.duePay || card.late);
   const actionCards = attention.length ? attention : upcomingAll.slice(0,3);
-  const actionNote = attention.length ? 'Live matches and finished sessions with money due'
+  const actionNote = attention.length ? 'Live, late, unresolved, and finished sessions needing action'
     : next ? 'No urgent work. Showing the next sessions to prepare.' : 'No sessions left today.';
   const actionHtml = `<div class="sess-sec priority"><div class="sechead">
     <h2 class="h2 sm">Action queue</h2><span class="count">${actionNote}</span></div><div class="priority-strip">
@@ -132,7 +136,7 @@ export function viewSessions(){
   const sections = PITCHES.map((pitch,pitchIndex) => {
     const raw = sessions.filter(session => session.pitch === pitchIndex && session.status !== 'cancelled');
     const live = raw.some(session => session.status === 'running');
-    const next = raw.filter(session => session.status === 'upcoming').sort((a,b) => a.start - b.start)[0];
+    const next = raw.filter(session => session.status === 'upcoming'&&session.start>now).sort((a,b) => a.start - b.start)[0];
     const busy = raw.filter(session => session.status !== 'noshow').reduce((total,session) => total + session.end - session.start,0);
     return `<div class="pitchsec"><div class="pitchhead${S.showPitchColors ? '' : ' neutral'}${live ? ' live' : ''}" style="${tintVars(tintFor(pitchIndex))}">
       <b>${esc(pitch.name)}</b><span class="sub">${esc(pitch.sub)}</span><span class="state${live ? ' live' : ''}">
@@ -143,13 +147,13 @@ export function viewSessions(){
     const list = cards.filter(card => card.pitchIndex === pitchIndex);
     const live = list.find(card => card.running);
     const due = list.find(card => card.duePay);
-    const upcoming = list.filter(card => card.upcoming).sort((a,b) => a.raw.start - b.raw.start)[0];
-    const primary = live || due || upcoming;
+    const unresolved=list.find(card=>card.elapsedSlot),upcoming = list.filter(card => card.upcoming&&!card.late).sort((a,b) => a.raw.start - b.raw.start)[0];
+    const primary = live || unresolved || due || upcoming;
     const booked = sessions.filter(session => session.pitch === pitchIndex && session.status !== 'noshow').reduce((total,session) => total + session.end - session.start,0);
     return `<button class="pitchstatus${live ? ' live' : due ? ' duepay' : ''}" data-act="${primary ? 'tl-block' : 'sessions-mode'}"
       data-id="${primary ? primary.id : ''}" data-v="schedule">
       <span><b>${esc(pitch.name)}</b><small>${esc(pitch.sub)}</small></span>
-      <strong>${live ? 'In play' : due ? 'Collect' : upcoming ? t12(upcoming.raw.start) : 'Idle'}</strong>
+      <strong>${live ? 'In play' : unresolved ? 'Resolve' : due ? 'Collect' : upcoming ? t12(upcoming.raw.start) : 'Idle'}</strong>
       <em>${primary ? esc(primary.team) : durTxt(booked) + ' booked'}</em></button>`;
   }).join('');
   const rowActionsFor = card => {

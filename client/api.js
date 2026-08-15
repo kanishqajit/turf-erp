@@ -29,6 +29,12 @@ function stateRange(){
   return { from:isoDate(fromDate), to:isoDate(toDate) };
 }
 
+function accountRange(){
+  const fromDate=new Date(TODAY),toDate=new Date(TODAY);
+  fromDate.setDate(fromDate.getDate()-180);toDate.setDate(toDate.getDate()+180);
+  return { from:isoDate(fromDate),to:isoDate(toDate) };
+}
+
 export async function loadState(){
   const { from, to } = stateRange();
   const states = [await apiRequest(`/api/state?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)];
@@ -40,10 +46,20 @@ export async function loadState(){
   S.blocks = merge('blocks');
   S.settings = states[0].settings || { depositAmount:500 };
   if (!S.depositDirty) S.depositDraft = String(S.settings.depositAmount);
+  const accountDates=accountRange();
+  try {
+    const accounts=await apiRequest(`/api/accounts?from=${accountDates.from}&to=${accountDates.to}`);
+    S.accounts=accounts.bookings;S.paymentEvents=accounts.payments;
+  } catch (error){ S.apiError=error.message; }
   if (can('manager')){
-    try { S.audit = (await apiRequest('/api/audit?limit=50')).events; }
-    catch (_) { S.audit = []; }
-  } else S.audit = [];
+    try { S.audit = (await apiRequest('/api/audit?limit=200')).events; S.auditError=''; }
+    catch (error) { S.audit = []; S.auditError=error.message; }
+  } else { S.audit = []; S.auditError=''; }
+  if (can('owner')){
+    try { S.users=(await apiRequest('/api/users')).users; }
+    catch (error){ S.apiError=error.message; }
+  } else S.users=[];
+  S.lastSyncedAt=Date.now();
 }
 
 export async function mutate(path, body = {}){
@@ -52,7 +68,8 @@ export async function mutate(path, body = {}){
   S.apiError = '';
   try {
     const result = await apiRequest(path, { method:'POST', body });
-    await loadState();
+    try { await loadState(); }
+    catch (error){ S.apiError=`Change saved, but the screen could not refresh: ${error.message}`; }
     return result;
   } catch (error){
     S.apiError = error.message;
@@ -71,7 +88,7 @@ export async function boot(onReady){
     const auth = await apiRequest('/api/auth/me');
     S.user = auth.user;
     S.csrf = auth.csrfToken;
-    await loadState();
+    if (!S.user.mustChangePassword) await loadState();
   } catch (error){
     if (error.code !== 'authentication_required') S.authError = error.message;
   }
@@ -89,5 +106,20 @@ export function loginHtml(){
     <label><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
     <label><span>Password</span><input name="password" type="password" autocomplete="current-password" minlength="12" required></label>
     <button class="dbtn primary wide" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Signing in…' : 'Sign in'}</button>
+  </form></main>`;
+}
+
+export function passwordChangeHtml(){
+  const valid=S.currentPassword.length>=12&&S.replacementPassword.length>=12&&S.replacementPassword.length<=256
+    &&S.replacementPassword===S.confirmPassword&&S.replacementPassword!==S.currentPassword;
+  return `<main class="auth"><form class="authcard" data-password-form><div class="mark">TF</div>
+    <div><span class="modal-kicker">Account protection</span><h1>Change temporary password</h1>
+    <p>Create a private password before entering the operations console. Other sessions for this account will be revoked.</p></div>
+    ${S.passwordError?`<div class="error-banner" role="alert">${esc(S.passwordError)}</div>`:''}
+    <label><span>Current temporary password</span><input id="current-password" name="currentPassword" data-act="password-field" data-k="currentPassword" value="${esc(S.currentPassword)}" type="password" autocomplete="current-password" minlength="12" maxlength="256" required></label>
+    <label><span>New password</span><input id="replacement-password" name="newPassword" data-act="password-field" data-k="replacementPassword" value="${esc(S.replacementPassword)}" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
+    <label><span>Confirm new password</span><input id="confirm-password" name="confirmPassword" data-act="password-field" data-k="confirmPassword" value="${esc(S.confirmPassword)}" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
+    <button class="dbtn primary wide" type="submit"${valid&&!S.busy?'':' disabled'}>${S.busy?'Changing password…':'Change password'}</button>
+    <button class="dbtn ghost wide" type="button" data-act="logout">Sign out and use another account</button>
   </form></main>`;
 }

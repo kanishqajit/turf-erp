@@ -1,30 +1,32 @@
 import { DOW, MON } from './constants.js';
-import { nowMin, t12, TODAY, TODAY_DI } from './datetime.js';
+import { isoDate, nowMin, t12, TODAY, TODAY_DI } from './datetime.js';
 import { chipCls, esc, sessionsToday } from './domain.js';
-import { refreshOperationalState, loginHtml } from './api.js';
+import { refreshOperationalState, loginHtml, passwordChangeHtml } from './api.js';
 import { S, staffInitials } from './state.js';
 import { modalsHtml } from './modals.js';
+import { viewAccounts } from './views/accounts.js';
 import { buildAlerts, viewAlerts } from './views/alerts.js';
 import { viewAvailability } from './views/availability.js';
 import { viewDashboard } from './views/dashboard.js';
 import { viewSessions } from './views/sessions.js';
 import { viewSettings } from './views/settings.js';
 
-const VIEWS={availability:viewAvailability,sessions:viewSessions,alerts:viewAlerts,dashboard:viewDashboard,settings:viewSettings};
-const TABS=[['availability','Availability'],['sessions','Sessions'],['alerts','Reminders'],['dashboard','Dashboard']];
+const VIEWS={availability:viewAvailability,sessions:viewSessions,accounts:viewAccounts,alerts:viewAlerts,dashboard:viewDashboard,settings:viewSettings};
+const TABS=[['availability','Availability','Slots'],['sessions','Sessions','Sessions'],['accounts','Accounts','Accounts'],
+  ['alerts','Reminders','Alerts'],['dashboard','Dashboard','Overview']];
 const LIVE_VIEWS=new Set(['sessions','alerts']);
 const SCROLL_PANES=['liveRail','grid'];
 const scrollPane=id=>document.getElementById(id)||document.querySelector(`[data-scroll-pane="${id}"]`);
 
 export function renderTopbar(){
   const topbar=document.getElementById('topbar');
-  if(!S.user){topbar.innerHTML='';return;}
+  if(!S.user||S.user.mustChangePassword){topbar.innerHTML='';return;}
   const {game,cash}=buildAlerts(),notifications=game.length+cash.length;
   const running=sessionsToday().filter(session=>session.status==='running').length;
   topbar.innerHTML=`<div class="brand"><div class="mark">TF</div><div class="brand-txt"><b>Turf Operations</b>
-    <span>Koramangala &middot; 3 pitches</span></div></div><nav class="tabs">${TABS.map(([view,text])=>
-    `<button class="${chipCls(S.view===view)} big" data-act="goto" data-v="${view}">${text}</button>${view==='alerts'
-      ?`<span class="badge"${notifications?'':' hidden'}>${notifications}</span>`:''}`).join('')}</nav><div class="topbar-end">
+    <span>Koramangala &middot; 3 pitches</span></div></div><nav class="tabs">${TABS.map(([view,text,short])=>
+    `<button class="${chipCls(S.view===view)} big" data-act="goto" data-v="${view}"><span class="nav-full">${text}</span><span class="nav-short">${short}</span>${view==='alerts'
+      ?`<span class="badge"${notifications?'':' hidden'}>${notifications}</span>`:''}</button>`).join('')}</nav><div class="topbar-end">
     <span class="livepill"><i></i>${running} in play &middot; ${t12(nowMin())}</span>
     <span class="today">${DOW[TODAY_DI]}, ${TODAY.getDate()} ${MON[TODAY.getMonth()]} ${TODAY.getFullYear()}</span>
     <button class="cog${S.view==='settings'?' on':''}" title="Settings" aria-label="Settings" data-act="goto" data-v="settings">
@@ -42,10 +44,15 @@ export function render(){
   const scrolls=SCROLL_PANES.map(id=>{const element=scrollPane(id);return element?{id,top:element.scrollTop,left:element.scrollLeft}:null;}).filter(Boolean);
   renderTopbar();
   if(!S.user){document.getElementById('view').innerHTML=loginHtml();document.getElementById('modals').innerHTML='';return;}
+  if(S.user.mustChangePassword){document.getElementById('view').innerHTML=passwordChangeHtml();document.getElementById('modals').innerHTML='';return;}
   const error=S.apiError?`<div class="error-banner app-error" role="alert"><span>${esc(S.apiError)}</span>
     <button data-act="dismiss-error" aria-label="Dismiss">&times;</button></div>`:'';
   document.getElementById('view').innerHTML=error+VIEWS[S.view]();
-  document.getElementById('modals').innerHTML=modalsHtml();
+  const modalRoot=document.getElementById('modals'),hadModal=!!modalRoot.querySelector('[role="dialog"]');
+  modalRoot.innerHTML=modalsHtml();
+  const dialog=modalRoot.querySelector('[role="dialog"]'),blocked=!!dialog;
+  document.getElementById('topbar').inert=blocked;document.getElementById('view').inert=blocked;
+  if(dialog&&!hadModal)(dialog.querySelector('input,textarea,select,button')||dialog).focus();
   scrolls.forEach(scroll=>{const element=scrollPane(scroll.id);if(element){element.scrollTop=scroll.top;element.scrollLeft=scroll.left;}});
   if(keep){const next=document.getElementById(keep.id);if(next){next.focus();if(keep.caret&&keep.caret[0]!=null){try{next.setSelectionRange(keep.caret[0],keep.caret[1]);}catch(_){}}}}
   syncStuck(false);
@@ -91,7 +98,8 @@ export function syncNowLine(){
 }
 
 export function startRendering(){
+  const bootDay=isoDate(new Date());
   addEventListener('scroll',()=>{if(!stuckRaf)stuckRaf=requestAnimationFrame(()=>syncStuck());},{passive:true});
-  setInterval(()=>{if(!S.user)return;if(LIVE_VIEWS.has(S.view))render();else{renderTopbar();if(S.view==='availability')syncNowLine();}},1000);
+  setInterval(()=>{if(isoDate(new Date())!==bootDay){location.reload();return;}if(!S.user)return;if(LIVE_VIEWS.has(S.view))render();else{renderTopbar();if(S.view==='availability')syncNowLine();}},1000);
   setInterval(async()=>{if(!S.user||S.busy)return;await refreshOperationalState();render();},15000);
 }

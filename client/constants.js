@@ -7,7 +7,7 @@ export const PITCHES = [
 export const START_HOUR = 6;
 export const END_HOUR = 22;
 export const DAY_START = START_HOUR * 60;
-export const DAY_END = (END_HOUR + 1) * 60;
+export const DAY_END = END_HOUR * 60;
 export const SPAN = DAY_END - DAY_START;
 
 export const PITCH_PALETTE = [

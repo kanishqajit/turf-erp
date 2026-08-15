@@ -1,8 +1,8 @@
-import { DOW, DOWL, MON, PAY_FORM, PITCHES, START_HOUR } from '../constants.js';
-import { dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, relDay, rng12, t12,
+import { DOW, DOWL, END_HOUR, MON, PAY_FORM, PITCHES, START_HOUR } from '../constants.js';
+import { clock12, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, relDay, rng12, t12,
   TODAY_DI, toMin } from '../datetime.js';
 import { blockAtTime, bookingAtTime, bookingWindow, bookingWindowAt, chipCls, coverage, esc, hbar, holdAtTime,
-  label, money, pitchColorFor, segCls, sourceFor, statusAtTime, statusFor, tintFor, tintVars, weekStart } from '../domain.js';
+  label, money, pitchColorFor, segCls, sourceFor, statusAtTime, statusFor, tintFor, tintVars, validContact, weekStart } from '../domain.js';
 import { can, S } from '../state.js';
 
 const blockReady = () => S.blockReason.trim().length >= 15;
@@ -98,7 +98,7 @@ function scheduleHtml(di, showNow){
         if (taken) return;
         const selected = selectedStart === slotStart;
         pieces.push(scheduleBubble({ cls:'bub schedule-open partial' + (selected ? ' sel' : ''), title:`Open half hour · ${rng12(slotStart, slotEnd)}`,
-          di, pitch, start:slotStart, span:1, time:t12(slotStart) }));
+          di, pitch, start:slotStart, span:1, time:rng12(slotStart, slotEnd) }));
       });
     });
   });
@@ -178,7 +178,9 @@ function selectionHtml(){
       <div class="drule" style="margin:16px 0 4px"></div>
       ${rows.map(row => `<div class="drow"><span>${esc(row[0])}</span><b>${esc(row[1])}</b></div>`).join('')}
       <div style="display:flex;gap:9px;margin-top:14px">${can('manager')
-        ? '<button class="dbtn primary" data-act="drop-custom">Release this booking</button>'
+        ? booking.collected > 0
+          ? `<button class="dbtn primary" data-act="booking-account" data-id="${booking.id}">Manage account before release</button>`
+          : '<button class="dbtn primary" data-act="drop-custom">Release this booking</button>'
         : '<span class="dsub">A manager must release confirmed bookings.</span>'}</div></div>`;
   }
 
@@ -190,14 +192,14 @@ function selectionHtml(){
   const maintenance = blockAtTime(selection.di, S.pitch, probeStart);
   const rows = status === 'hold' ? [
       ['Booked via','Counter · walk-in'], ['Contact',hold?.contact || '—'], ['Format',pitch.sub],
-      ['Hold expires', hold ? new Date(hold.expiresAt).toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit' })
+      ['Hold expires', hold ? clock12(hold.expiresAt)
         + ` · ${Math.max(0, Math.ceil((hold.expiresAt - Date.now()) / 60000))} min left` : '—'],
-      ['Amount',money(pitch.rate)],
+      ['Amount',hold?money(pitch.rate*(hold.end-hold.start)/60+(hold.end>18*60?300:0)):'—'],
     ].concat(hold?.team ? [['Team',hold.team]] : []).concat(hold?.notes ? [['Notes',hold.notes]] : [])
     : status === 'blocked' ? [
       ['Reason',maintenance?.reason || 'Maintenance'], ['Blocked by',maintenance?.createdBy || 'Grounds team'],
       ['Logged',maintenance?.createdAt ? new Date(maintenance.createdAt).toLocaleString('en-IN') : '—'],
-      ['Revenue lost',money(pitch.rate)],
+      ['Revenue at risk',maintenance?money(pitch.rate*(maintenance.end-maintenance.start)/60+(maintenance.end>18*60?300:0)):'—'],
     ] : [
       ['Rate',money(pitch.rate) + ' / hour'], ['Format',pitch.sub],
       ['Floodlights',bookingEnd > 18 * 60 ? 'Required (+₹300)' : 'Not needed'], ['Deposit',money(S.settings.depositAmount)],
@@ -231,7 +233,7 @@ function selectionHtml(){
 
   return `<div class="panel" role="region" aria-label="Selected slot details"><div class="panel-head"><span class="tag ondark">${label(status)}</span>
     <button class="x" data-act="clear-sel" aria-label="Close slot details">&times;</button></div>
-    <div class="sel-time">${status === 'free' ? rng12(bookingStart,bookingEnd) : hourRng12(hour)}</div>
+    <div class="sel-time">${status === 'free' ? rng12(bookingStart,bookingEnd) : status==='hold'&&hold?rng12(hold.start,hold.end):status==='blocked'&&maintenance?rng12(maintenance.start,maintenance.end):hourRng12(hour)}</div>
     <div class="sel-where">${DOWL[selection.di]}, ${date.getDate()} ${MON[date.getMonth()]} &middot; ${esc(pitch.name)} &middot; ${esc(pitch.sub)}</div>
     <div class="drule" style="margin:16px 0 4px"></div>
     ${rows.map(row => `<div class="drow"><span>${esc(row[0])}</span><b>${esc(row[1])}</b></div>`).join('')}
@@ -253,7 +255,7 @@ export function formFieldsHtml(namespace){
 
 function customPanelHtml(){
   const ready = S.cName.trim() && S.cPhone.trim().length >= 6, startOfWeek = weekStart();
-  return `<div class="panel"><div class="panel-head"><b class="panel-title">Custom time slot</b>
+  return `<div class="panel" role="region" aria-label="Custom time slot"><div class="panel-head"><b class="panel-title">Custom time slot</b>
     <button class="x" data-act="close-custom" aria-label="Close custom booking form">&times;</button></div>
     <span class="dlabel" style="margin-bottom:6px">Day</span><div style="display:flex;flex-wrap:wrap;gap:6px">
     ${DOW.map((day, index) => { const date = new Date(startOfWeek); date.setDate(date.getDate() + index); const active = S.cDay === index;
@@ -297,7 +299,7 @@ const groupChecks = () => S.gDates.map(offset => {
 });
 export const groupValid = () => {
   const checks = groupChecks();
-  return !!(S.gName.trim() && S.gPhone.trim().length >= 6 && checks.length && checks.every(item => item.check.ok));
+  return !!(S.gName.trim() && validContact(S.gPhone) && checks.length && checks.every(item => item.check.ok));
 };
 
 function groupPanelHtml(){
@@ -305,7 +307,7 @@ function groupPanelHtml(){
   const conflicts = checks.filter(item => !item.check.ok), count = S.gDates.length;
   const perSession = PITCHES[S.gPitch].rate * S.gDur / 60 + (end > 18 * 60 ? 300 : 0), total = perSession * count;
   const nameLabel = S.gType === 'Corporate' ? 'Company name' : 'Group name';
-  return `<div class="panel group-panel"><div class="panel-head"><div><span class="modal-kicker">Multi-date booking</span>
+  return `<div class="panel group-panel" role="region" aria-label="Group booking"><div class="panel-head"><div><span class="modal-kicker">Multi-date booking</span>
     <b class="panel-title">Group booking</b></div><button class="x" data-act="close-group" aria-label="Close group booking form">&times;</button></div>
     <p class="group-intro">Reserve one time across several dates for a company or organised group.</p>
     <span class="dlabel">Booking type</span><div class="optrow group-type">${['Corporate','Group'].map(type =>
@@ -341,7 +343,9 @@ function groupPanelHtml(){
 export function viewAvailability(){
   const allHours = hours(), startOfWeek = weekStart(), isDay = S.availMode === 'day';
   let free = 0, total = 0;
-  for (let di=0;di<7;di++) allHours.forEach((hour,hi) => { total++; if (!coverage(S.pitch,di,hour)&&statusFor(di,hi,S.pitch)==='free') free++; });
+  for (let di=0;di<7;di++) for (let start=START_HOUR*60;start<END_HOUR*60;start+=30){
+    total++;if(statusAtTime(di,S.pitch,start,start+30)==='free')free++;
+  }
   const weekEnd = new Date(startOfWeek); weekEnd.setDate(weekEnd.getDate()+6);
   const weekLabel = startOfWeek.getDate()+' '+MON[startOfWeek.getMonth()]+' – '+weekEnd.getDate()+' '+MON[weekEnd.getMonth()];
   const legend = [
@@ -356,9 +360,9 @@ export function viewAvailability(){
     return `<span><i style="${swatch}"></i>${text}</span>`;
   }).join('')+`<span><i style="border:1px solid var(--ink);background:linear-gradient(90deg,#fff 0 50%,var(--ink) 50% 100%)"></i>Part-booked (custom)</span>`;
   const tint = tintFor(S.pitch);
-  const days = DOW.map((dow,di) => { const date=new Date(startOfWeek);date.setDate(date.getDate()+di);let booked=0;
-    allHours.forEach((hour,hi)=>{if((coverage(S.pitch,di,hour)?'booked':statusFor(di,hi,S.pitch))!=='free')booked++;});
-    return {dow,dayNum:date.getDate(),month:MON[date.getMonth()],load:Math.round(booked/allHours.length*100),today:S.weekOffset===0&&di===TODAY_DI}; });
+  const days = DOW.map((dow,di) => { const date=new Date(startOfWeek);date.setDate(date.getDate()+di);let booked=0,count=0;
+    for(let start=START_HOUR*60;start<END_HOUR*60;start+=30){count++;if(statusAtTime(di,S.pitch,start,start+30)!=='free')booked++;}
+    return {dow,dayNum:date.getDate(),month:MON[date.getMonth()],load:Math.round(booked/count*100),today:S.weekOffset===0&&di===TODAY_DI}; });
   const pitchChips = `<div class="pitchpicker">${PITCHES.map((pitch,index)=>`<button class="${chipCls(index===S.pitch)}" data-act="pitch"
     data-v="${index}" ${index===S.pitch||!S.showPitchColors?'':`style="background:${pitchColorFor(index)};border-color:${pitchColorFor(index)};color:#fff"`}>
     ${esc(pitch.name)}</button>`).join('')}</div>`;
@@ -370,23 +374,24 @@ export function viewAvailability(){
     ${bandsHtml(buildBands(allHours,(hour,hi)=>days.map((_,di)=>slotHtml(di,hi,hour,S.pitch))),false,S.weekOffset===0)}</div>`;
 
   const di=S.dayIndex,dayDate=new Date(startOfWeek);dayDate.setDate(dayDate.getDate()+di);let dayFree=0,dayTotal=0;
-  const pitchOpen=PITCHES.map((_,pitch)=>{let count=0;allHours.forEach((hour,hi)=>{dayTotal++;if(!coverage(pitch,di,hour)&&statusFor(di,hi,pitch)==='free'){count++;dayFree++;}});return count;});
+  const pitchOpen=PITCHES.map((_,pitch)=>{let count=0;for(let start=START_HOUR*60;start<END_HOUR*60;start+=30){
+    dayTotal++;if(statusAtTime(di,pitch,start,start+30)==='free'){count++;dayFree++;}}return count;});
   const offsetNow=daysFromToday(S.weekOffset,di),relative=relDay(offsetNow);
   const jumps=Array.from({length:8},(_,offset)=>{const date=dateAt(offset);return {offset,on:offset===offsetNow,label:relDay(offset)||DOW[(date.getDay()+6)%7]+' '+date.getDate()};});
   const dayGrid=`<div class="gridcard daycard" data-scroll-pane="grid" style="--cols:${PITCHES.length}"><div class="gridsticky"><div class="gridtop"><div class="gridcard-head">
     <div class="daynav"><button class="rbtn sm" data-act="day" data-v="-1">&#8592;</button><div class="daynav-now"><b>${relative||DOWL[di]}</b>
     <span>${relative?DOWL[di]+' &middot; ':''}${dayDate.getDate()} ${MON[dayDate.getMonth()]} ${dayDate.getFullYear()}</span></div>
-    <button class="rbtn sm" data-act="day" data-v="1">&#8594;</button></div><span class="grid-soft dark">${dayFree} of ${dayTotal} open across ${PITCHES.length} pitches</span></div>
+    <button class="rbtn sm" data-act="day" data-v="1">&#8594;</button></div><span class="grid-soft dark">${dayFree} of ${dayTotal} half-hours open across ${PITCHES.length} pitches</span></div>
     <div class="dayjump">${jumps.map(jump=>`<button class="jchip${jump.on?' on':''}" data-act="day-jump" data-v="${jump.offset}">${jump.label}</button>`).join('')}
     <label class="jchip jdate${offsetNow<0||offsetNow>7?' on':''}"><span>${offsetNow<0||offsetNow>7?dayDate.getDate()+' '+MON[dayDate.getMonth()]:'Pick date'}</span>
     <input type="date" value="${isoDate(dayDate)}" data-act="day-date" aria-label="Jump to date"></label></div></div>
     <div class="pitchstrip"><span class="hourlbl head">Time</span>${PITCHES.map((pitch,index)=>`<button type="button" class="pitchcol${index===S.pitch?' on':''}"
       data-act="pitch" data-v="${index}" style="${S.showPitchColors?`--col-accent:${pitchColorFor(index)}`:''}"><b>${esc(pitch.name)}</b><span>${esc(pitch.sub)}</span>
-      <span class="open">${pitchOpen[index]} of ${allHours.length} open</span></button>`).join('')}</div></div>
+      <span class="open">${pitchOpen[index]} of ${allHours.length*2} half-hours open</span></button>`).join('')}</div></div>
     ${scheduleHtml(di,offsetNow===0)}</div>`;
   const pitchLoad=PITCHES.map((pitch,index)=>{let booked=0,count=0;
-    if(isDay)allHours.forEach((hour,hi)=>{count++;if(coverage(index,di,hour)||statusFor(di,hi,index)!=='free')booked++;});
-    else for(let day=0;day<7;day++)allHours.forEach((hour,hi)=>{count++;if(coverage(index,day,hour)||statusFor(day,hi,index)!=='free')booked++;});
+    if(isDay)for(let start=START_HOUR*60;start<END_HOUR*60;start+=30){count++;if(statusAtTime(di,index,start,start+30)!=='free')booked++;}
+    else for(let day=0;day<7;day++)for(let start=START_HOUR*60;start<END_HOUR*60;start+=30){count++;if(statusAtTime(day,index,start,start+30)!=='free')booked++;}
     const percent=Math.round(booked/count*100);return `<div class="loadrow"><div class="top"><span>${esc(pitch.name)}</span><b>${percent}%</b></div>
       <div class="track"><div class="fill" style="${hbar(percent)}"></div></div></div>`;}).join('');
   const loadCap=isDay?`Pitch load, ${DOW[di]} ${dayDate.getDate()}`:'Pitch load, this week';
@@ -401,7 +406,7 @@ export function viewAvailability(){
     <button class="rbtn" data-act="week" data-v="1">&#8594;</button></div>
     <button class="pillbtn" data-act="open-group">+ Group booking</button>
     <button class="pillbtn" data-act="open-custom">+ Custom slot</button></div></div>
-    <div class="legend">${legend}<span class="fill">${isDay?dayFree+' of '+dayTotal+' slots open on '+DOW[di]+' '+dayDate.getDate():free+' of '+total+' slots open this week'}</span></div>
+    <div class="legend">${legend}<span class="fill">${isDay?dayFree+' of '+dayTotal+' half-hours open on '+DOW[di]+' '+dayDate.getDate():free+' of '+total+' half-hours open this week'}</span></div>
     ${isDay?dayGrid:weekGrid}</section><aside class="aside${asidePanel?' has-panel':''}">${asideBody}
     <div class="loadcard"><div class="cap">${loadCap}</div>${pitchLoad}</div></aside></main>`;
 }

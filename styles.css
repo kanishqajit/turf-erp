@@ -81,6 +81,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .brand-txt b{font:700 15px var(--sans);letter-spacing:-.2px}
 .brand-txt span{font:500 11.5px var(--sans);color:var(--muted)}
 .tabs{display:flex;gap:6px;margin-left:14px}
+.nav-short{display:none}
 .badge{display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin-left:-2px;
   border-radius:999px;background:var(--red);color:#fff;font:700 11px var(--sans)}
 .badge[hidden]{display:none}
@@ -395,15 +396,14 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .bandrow.has-now .hourtxt{opacity:0}
 
 /* the time bubbles */
-.bub{position:relative;display:flex;align-items:center;justify-content:center;height:38px;flex:none;width:100%;padding:0 3px;
-  cursor:pointer;white-space:nowrap;overflow:hidden;font:700 11.5px var(--sans);letter-spacing:0;
+.bub{position:relative;display:flex;align-items:center;justify-content:center;height:38px;flex:none;width:100%;padding:0 4px;
+  cursor:pointer;white-space:nowrap;overflow:hidden;text-align:center;font:800 13px var(--sans);letter-spacing:0;
   font-variant-numeric:tabular-nums;border-radius:15px;
   transition:.12s;border:1px solid var(--edge2);background:var(--paper);color:var(--ink)}
 .bub.via-app{background:var(--lime);border-color:var(--lime-deep);color:var(--ink)}
 .bub.counter{background:var(--ink);border-color:var(--ink);color:#fff}
-.bub-time{display:block;line-height:1}
-.bub.via-app>.bub-time,.bub.counter>.bub-time,.bub.part>.bub-time,.bub.hold>.bub-time,
-.bub.blocked>.bub-time{transform:translateY(3px)}
+.bub-time{display:block;align-self:center;width:fit-content;max-width:100%;margin-inline:auto;
+  overflow:hidden;text-overflow:ellipsis;line-height:1;text-align:center}
 .bub-indicator{position:absolute;z-index:2;top:3px;right:4px;display:inline-flex;align-items:center;
   justify-content:center;min-width:28px;max-width:calc(100% - 8px);min-height:12px;padding:1px 5px;
   overflow:hidden;text-overflow:ellipsis;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;
@@ -422,31 +422,33 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
 /* A single continuous timeline replaces the former stack of hour-sized
    fragments in day view, while keeping the same bubble visual language. */
-.gridcard{--schedule-row:30px;overflow:visible}
+.gridcard{--schedule-row:36px;overflow:visible}
 .gridsticky,.schedule-board{min-width:calc(72px + var(--cols) * 98px)}
 .schedule-board{position:relative;display:grid;grid-template-columns:72px repeat(var(--cols),minmax(92px,1fr));
-  grid-template-rows:repeat(var(--rows),var(--schedule-row));column-gap:6px;padding:8px 0 12px;
+  grid-template-rows:repeat(var(--rows),var(--schedule-row));column-gap:8px;padding:10px 0 14px;
   background:repeating-linear-gradient(to bottom,transparent 0 calc(var(--schedule-row) * 2 - 1px),
     color-mix(in srgb,var(--tint-fg) 12%,transparent) calc(var(--schedule-row) * 2 - 1px) calc(var(--schedule-row) * 2))}
 .schedule-hour{grid-column:1;grid-row:var(--grid-row)/span var(--grid-span,1);min-height:var(--schedule-row)}
 .schedule-hour::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;
   width:1px;transform:translateX(-50%);background:var(--edge3)}
 .schedule-cell{grid-column:var(--grid-col);grid-row:var(--grid-row)/span var(--grid-span,1);position:relative;
-  z-index:1;padding:2px 0}
-.schedule-bub{height:100%;min-height:26px;border-radius:15px;flex-direction:column;gap:3px;padding:5px 8px;text-align:center}
-.schedule-bub:hover{z-index:2;filter:brightness(.98);box-shadow:0 3px 10px rgba(22,24,28,.13)}
+  z-index:1;padding:3px 0}
+.schedule-bub{height:100%;min-height:30px;border-radius:18px;flex-direction:column;gap:5px;padding:8px 10px;text-align:center;
+  border-width:1.5px;box-shadow:0 1px 2px rgba(22,24,28,.04)}
+.schedule-bub:hover{z-index:2;filter:brightness(.99);box-shadow:0 4px 12px rgba(22,24,28,.12)}
 .schedule-bub:focus-visible{z-index:3}
 .bub.schedule-bub>.bub-time{transform:none}
-.schedule-bub .bub-time{font:800 10.5px/1 var(--sans);max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.schedule-bub .bub-time{font:800 14px/1 var(--sans);max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .schedule-bub strong{display:block;max-width:100%;font:700 11px/1.05 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .schedule-bub small{display:block;margin-top:auto;font:800 8px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;opacity:.72}
-.schedule-cell.compact .schedule-bub{flex-direction:row;gap:4px;padding:3px 7px}
+.schedule-cell.compact .schedule-bub{flex-direction:row;gap:4px;padding:3px 8px;border-radius:14px}
+.schedule-cell.compact .schedule-bub .bub-time{font-size:11.5px}
 .schedule-cell.compact .schedule-bub strong,.schedule-cell.compact .schedule-bub small{display:none}
 .schedule-open{border-color:var(--lime-deep);color:var(--ink);background:var(--lime-pale);font-weight:700}
-.schedule-open.full{box-shadow:inset 0 0 0 1px rgba(188,213,60,.35)}
+.schedule-open.full{box-shadow:inset 0 0 0 1px rgba(188,213,60,.4),0 1px 2px rgba(22,24,28,.04)}
 .schedule-open.partial{border-style:dashed;background:rgba(255,255,255,.88);color:var(--body)}
-.schedule-open .bub-time{font-size:10px;color:inherit}
-.schedule-open strong{color:var(--lime-txt);letter-spacing:.06em;text-transform:uppercase}
+.schedule-open .bub-time{font-size:14.5px;color:inherit}
+.schedule-open strong{color:var(--lime-txt);font:800 12.5px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase}
 .schedule-now{position:absolute;z-index:5;left:72px;right:0;top:calc(8px + var(--now-row) * var(--schedule-row));
   height:2px;background:var(--red);pointer-events:none}
 .schedule-now::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--red)}
@@ -808,6 +810,29 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .policy-value{font:800 24px var(--sans);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
+/* ─── accounts ────────────────────────────────────────── */
+.accounts{padding:20px 22px 48px;display:flex;flex-direction:column;gap:16px}
+.acct-stats{display:flex;gap:10px;overflow-x:auto;max-width:100%;padding-bottom:2px}
+.acct-stats .stat{flex:0 0 auto}
+.acct-card{background:var(--paper);border:1px solid var(--edge);border-radius:26px;padding:20px}
+.acct-table{border:1px solid var(--rule);border-radius:16px;overflow:hidden}
+.acct-head,.acct-row{display:grid;grid-template-columns:1fr 1.5fr 1.2fr 1.1fr .9fr;gap:12px;align-items:center}
+.acct-head{padding:10px 13px;border-bottom:1px solid var(--rule);font:700 9.5px var(--sans);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted2)}
+.acct-row{padding:13px;border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.acct-row:last-child{border-bottom:0}.acct-row.focus{background:var(--lime-tint)}
+.acct-when b,.acct-who b,.acct-money b{display:block;font:700 13.5px var(--sans)}
+.acct-when span,.acct-who span,.acct-money span,.acct-state small{display:block;margin-top:3px;color:var(--muted);font:500 11.5px var(--sans)}
+.acct-money b{font-variant-numeric:tabular-nums}.acct-state span{display:block;font:700 12.5px var(--sans)}
+.acct-state small{text-transform:capitalize}.acct-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.acct-filters{display:grid;grid-template-columns:minmax(220px,1fr) 150px 150px auto;gap:10px;align-items:end;margin-bottom:14px}
+.acct-filters>.optrow{grid-column:1/-1;justify-content:flex-start}.acct-filters>.optrow .seg-opt{flex:0 0 auto;padding-inline:18px}
+.acct-filters label>span:not(.sr-only){display:block;margin-bottom:5px;font:700 10px var(--sans);color:var(--muted);text-transform:uppercase}
+.acct-filters .dinput{width:100%}.acct-history{grid-column:1/-1;border-top:1px solid var(--rule);padding-top:10px}
+.acct-history>b{display:block;margin-bottom:6px;font:700 11px var(--sans);text-transform:uppercase;color:var(--muted)}
+.acct-event{display:grid;grid-template-columns:150px 1fr 1fr;gap:10px;padding:6px 0;font:500 11px var(--sans)}
+.acct-event time,.acct-event small{color:var(--muted)}
+
 /* ─── dashboard ───────────────────────────────────────── */
 .dash{padding:20px 22px 48px;display:flex;flex-direction:column;gap:16px}
 .charts{display:grid;grid-template-columns:1.35fr 1fr;gap:12px;align-items:start}
@@ -866,13 +891,19 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .account-summary b{font-size:15px}.account-summary div span{margin-top:2px;color:var(--muted);font-size:12px}
 .user-form{display:grid;grid-template-columns:1fr 1.2fr;gap:12px;margin-bottom:14px}
 .user-form label{display:block}.user-form .dinput{width:100%;margin-top:5px}
+.staff-list{border:1px solid var(--rule);border-radius:16px;overflow:hidden}.staff-row{display:grid;grid-template-columns:38px minmax(0,1fr) auto;
+  gap:12px;align-items:center;padding:11px 13px;border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.staff-row:last-child{border-bottom:0}.staff-row b,.staff-row span{display:block}.staff-row div>span{margin-top:2px;color:var(--muted);font-size:11px}
+.settings-note.warning{margin-bottom:12px;padding:10px 12px;border-radius:12px;background:var(--lime-tint);color:var(--ink)}
 .audit-card{max-width:none}.audit-list{border:1px solid var(--rule);border-radius:16px;overflow:hidden}
-.audit-row{display:grid;grid-template-columns:150px minmax(0,1fr) 130px;gap:12px;align-items:center;
-  padding:11px 13px;border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.audit-row{display:block;padding:0;border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.audit-row summary{display:grid;grid-template-columns:150px minmax(0,1fr) 130px;gap:12px;align-items:center;padding:11px 13px;cursor:pointer}
 .audit-row:last-child{border-bottom:0}.audit-row time{font-size:11px;color:var(--muted)}
 .audit-row b,.audit-row span{display:block}.audit-row b{font-size:12px}.audit-row span{margin-top:2px;font-size:11px;color:var(--body)}
 .audit-row code{font-size:10px;color:var(--muted);text-align:right}
-@media(max-width:700px){.user-form{grid-template-columns:1fr}.audit-row{grid-template-columns:1fr}.audit-row code{text-align:left}}
+.audit-detail{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 13px 13px}.audit-detail pre{margin:5px 0 0;padding:10px;border-radius:10px;
+  background:var(--soft2);font:500 10px/1.45 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+@media(max-width:700px){.user-form{grid-template-columns:1fr}.audit-row summary,.audit-detail{grid-template-columns:1fr}.audit-row code{text-align:left}}
 
 /* The console remains dense, but the page itself never overflows on a phone.
    Wide operational tables scroll inside their own surface and primary navigation
@@ -882,12 +913,15 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .topbar{height:60px;padding:0 12px;gap:8px}
   .brand{gap:8px}.brand .mark{width:36px;height:36px}.brand-txt span{display:none}
   .topbar-end{gap:7px}.livepill,.today,.account>span:last-child{display:none}
-  .cog,.avatar{width:36px;height:36px}
+  .cog,.avatar,.account{min-width:44px;min-height:44px}.cog,.avatar{width:44px;height:44px}
   .tabs{position:fixed;z-index:80;left:0;right:0;bottom:0;height:64px;margin:0;padding:8px 8px calc(8px + env(safe-area-inset-bottom));
-    display:flex;justify-content:space-around;gap:4px;background:var(--paper);border-top:1px solid var(--edge);overflow-x:auto}
-  .tabs .chip.big{height:42px;padding:0 12px;font-size:12px;flex:1;justify-content:center;box-shadow:none}
-  .tabs .badge{position:absolute;top:5px;margin-left:18px}
+    display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;background:var(--paper);border-top:1px solid var(--edge);overflow:hidden}
+  .tabs .chip.big{position:relative;height:44px;min-width:0;padding:0 3px;font-size:10.5px;justify-content:center;box-shadow:none}
+  .tabs .nav-full{display:none}.tabs .nav-short{display:inline}
+  .tabs .badge{position:absolute;top:-5px;right:0;margin:0}
   .gridcard{overflow-x:auto;overflow-y:hidden;scrollbar-gutter:stable}
+  .gridcard:not(.daycard) .daystrip,.gridcard:not(.daycard) .bandrow{min-width:700px}
+  .daycard .gridsticky,.daycard .schedule-board{min-width:480px}
   .gridsticky{position:static;top:auto}.app-error{top:62px;margin-left:12px;margin-right:12px}
   .avail,.sessions{grid-template-columns:minmax(0,1fr);padding:14px 12px 28px}
   .aside{position:static;max-height:none;overflow:visible;padding:0;background:none}
@@ -909,15 +943,22 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .timeline{overflow-x:auto}.tl-track,.tl-ticks{min-width:620px}
   .pitchstatus-grid{grid-template-columns:1fr}
   .charts{grid-template-columns:1fr}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .dash,.alerts,.settings{padding:14px 12px 28px}
+  .dash,.alerts,.settings,.accounts{padding:14px 12px 28px}
+  .mini,.rbtn.sm,.jchip,.modeopt{min-height:44px}.rbtn.sm{width:44px;height:44px}
+  .rbtn{width:44px;height:44px}.pillbtn{min-height:44px}
+  .acct-filters{grid-template-columns:1fr 1fr}.acct-filters>label:first-child,.acct-filters>.optrow{grid-column:1/-1}
+  .staff-row{grid-template-columns:44px minmax(0,1fr)}.staff-row .acct-actions{grid-column:1/-1;justify-content:flex-start}
   .modal{border-radius:22px;padding:20px}.backdrop{padding:12px}
 }
 @media(max-width:520px){
   .brand-txt b{font-size:13px}.tiles{grid-template-columns:1fr 1fr;gap:8px}.tile{padding:15px;border-radius:20px}
   .tile .val{font-size:34px}.chart,.bookings,.setcard{padding:15px;border-radius:20px}
   .h1{font-size:30px}.modeseg{order:2}.modeopt{padding:0 10px}
-  .gridcard{--schedule-row:32px}
+  .gridcard{--schedule-row:48px}
   .legend-help{flex:1 1 100%}.availability-total{margin-left:0}
   .schedule-item.open strong{display:none}
   .policy-row{flex-direction:column}.deposit-editor{width:100%;flex-wrap:wrap}.deposit-editor label{flex:1}.deposit-editor .dinput{width:100%}
+  .acct-card{padding:15px;border-radius:20px}.acct-head{display:none}.acct-table{border:0;border-radius:0}
+  .acct-row{grid-template-columns:minmax(0,1fr);gap:8px;border:1px solid var(--rule);border-radius:14px;margin-bottom:8px}
+  .acct-actions{justify-content:flex-start}.acct-actions .mini{height:44px}.acct-event{grid-template-columns:1fr}
 }

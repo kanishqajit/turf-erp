@@ -3,7 +3,7 @@ const email = process.env.TURF_SEED_EMAIL;
 const password = process.env.TURF_SEED_PASSWORD;
 
 if (!email || !password){
-  console.error('Set TURF_SEED_EMAIL and TURF_SEED_PASSWORD to an owner or operator account.');
+  console.error('Set TURF_SEED_EMAIL and TURF_SEED_PASSWORD to an owner or manager account.');
   process.exit(1);
 }
 
@@ -91,18 +91,20 @@ for (let index = 0; index < created.length; index++){
       status:'noshow', reason:'Demo customer did not arrive', atMinute:booking.start,
     })).booking;
   } else if (past || (current && nature !== 'group')){
-    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start })).booking;
-    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'done', atMinute:booking.end })).booking;
+    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start,reason:'Demo seed time correction' })).booking;
+    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'done', atMinute:booking.end,reason:'Demo seed time correction' })).booking;
   } else if (current && nature === 'group'){
-    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start })).booking;
+    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start,reason:'Demo seed time correction' })).booking;
   }
 
   if (booking.status !== 'noshow'){
     const paymentPattern = (dayIndex + ['standard','custom','group'].indexOf(nature)) % 3;
     if (paymentPattern === 0){
-      await post(`/api/bookings/${booking.id}/payments`, { amount:booking.amount, mode:'UPI', settle:true });
+      await post(`/api/bookings/${booking.id}/payments`, { amount:booking.amount, mode:'UPI', settle:true,
+        reference:`DEMO-${booking.id.slice(0,12)}`,idempotencyKey:`demo-payment-${booking.id}` });
     } else if (paymentPattern === 1){
-      await post(`/api/bookings/${booking.id}/payments`, { amount:Math.min(500, booking.amount), mode:'Cash', settle:false });
+      await post(`/api/bookings/${booking.id}/payments`, { amount:Math.min(500, booking.amount), mode:'Cash', settle:false,
+        idempotencyKey:`demo-payment-${booking.id}` });
     }
   }
 }

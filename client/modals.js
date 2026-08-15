@@ -1,21 +1,25 @@
 import { DOWL, MON, PAY_FORM, PAY_MODES, PITCHES } from './constants.js';
-import { durTxt, hours, nowMin, rng12, t12 } from './datetime.js';
-import { bookingWindow, esc, money, segCls, sessionById, weekStart } from './domain.js';
+import { dateForAddress, durTxt, hours, nowMin, rng12, t12 } from './datetime.js';
+import { bookingWindow, esc, money, segCls, sessionById, validContact, weekStart } from './domain.js';
 import { can, S } from './state.js';
+import { refundDialogHtml } from './views/accounts.js';
 import { formFieldsHtml } from './views/availability.js';
 import { buildSessions, matchOptsHtml, payOptsHtml } from './views/sessions.js';
 
-const confirmValid = () => S.form.team.trim().length > 0 && S.form.contact.trim().length >= 6;
+const confirmValid = () => S.form.team.trim().length > 0 && validContact(S.form.contact);
 
 function confirmDialogHtml(){
   const selection=S.sel,mode=S.confirm;
-  const isHold=mode==='hold',duration=mode==='confirm-hold'?60:S.dur,hour=hours()[selection.hi],date=new Date(weekStart());date.setDate(date.getDate()+selection.di);
-  const pitch=PITCHES[S.pitch],start=mode==='confirm-hold'?hour*60:hour*60+S.startOffset;
+  const isHold=mode==='hold',hour=hours()[selection.hi],probe=hour*60+S.startOffset;
+  const held=mode==='confirm-hold'?S.holds.find(record=>record.date===dateForAddress(S.weekOffset,selection.di)
+    &&record.pitch===S.pitch&&record.start<probe+30&&record.end>probe):null;
+  const duration=held?held.end-held.start:S.dur,date=new Date(weekStart());date.setDate(date.getDate()+selection.di);
+  const pitch=PITCHES[S.pitch],start=held?held.start:hour*60+S.startOffset;
   const windowCheck=mode==='book'?bookingWindow(selection.di,S.pitch,start,duration):{ok:true};
   const valid=(mode==='confirm-hold'||confirmValid())&&windowCheck.ok;
-  return `<div class="backdrop"><div class="modal wide"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+  return `<div class="backdrop"><div class="modal wide" role="dialog" aria-modal="true" aria-label="${isHold?'Confirm hold':mode==='confirm-hold'?'Convert hold to booking':'Confirm booking'}" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
     <span class="modal-kicker">${isHold?'Confirm hold':mode==='confirm-hold'?'Convert hold to booking':'Confirm booking'}</span>
-    <button class="x" data-act="dlg-cancel">&times;</button></div><div class="plate"><div class="plate-kicker">You are confirming</div>
+    <button class="x" data-act="dlg-cancel" aria-label="Close confirmation">&times;</button></div><div class="plate"><div class="plate-kicker">You are confirming</div>
     <div class="plate-time">${rng12(start,start+duration)}</div><div class="plate-dur">${duration===60?'':duration+' min booking'}</div>
     <div class="plate-day">${DOWL[selection.di]}, ${date.getDate()} ${MON[date.getMonth()]} ${date.getFullYear()}</div><div class="plate-foot">
     <span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${money(pitch.rate*duration/60+(start+duration>18*60?300:0))}</b></div></div>
@@ -32,14 +36,13 @@ function confirmDialogHtml(){
 
 function timerDialogHtml(){
   const session=sessionById(S.timerAsk),now=nowMin(),pitch=PITCHES[session.pitch],late=Math.round(now-session.start);
-  return `<div class="backdrop"><div class="modal"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-    <span class="modal-kicker">Start match timer</span><button class="x" data-act="timer-cancel">&times;</button></div><div class="plate">
+  return `<div class="backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="Start match timer" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <span class="modal-kicker">Start match timer</span><button class="x" data-act="timer-cancel" aria-label="Close timer dialog">&times;</button></div><div class="plate">
     <div class="plate-kicker">Clock now</div><div class="plate-time">${t12(now)}</div><div class="plate-day">${esc(session.team)}</div>
     <div class="plate-foot"><span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${rng12(session.start,session.end)}</b></div></div>
     <p class="dnote">${late>0?'Slot began '+late+' min ago. Starting now runs the timer from '+t12(now)+', ending '+t12(session.end)+'.'
       :'Slot has not begun yet. Starting now runs the timer from '+t12(now)+'.'}</p><div class="stack">
     <button class="dbtn primary wide sm" data-act="timer-start" data-v="now">Start now &middot; ${t12(now)}</button>
-    <button class="dbtn wide sm" data-act="timer-start" data-v="slot">Start from slot time &middot; ${t12(session.start)}</button>
     <button class="dbtn ghost wide" data-act="timer-cancel" style="height:44px">Cancel</button></div></div></div>`;
 }
 
@@ -47,8 +50,8 @@ function doneDialogHtml(){
   const session=sessionById(S.doneAsk),now=nowMin(),pitch=PITCHES[session.pitch];
   const outstanding=Math.max(0,session.amount-(session.discount||0)-(session.collected||0));
   const unpaid=session.pay!=='Payment done',early=Math.round(session.end-now);
-  return `<div class="backdrop top"><div class="modal"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-    <span class="modal-kicker">End this session?</span><button class="x" data-act="done-cancel">&times;</button></div><div class="plate">
+  return `<div class="backdrop top"><div class="modal" role="dialog" aria-modal="true" aria-label="End this session" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <span class="modal-kicker">End this session?</span><button class="x" data-act="done-cancel" aria-label="Close end-session dialog">&times;</button></div><div class="plate">
     <div class="plate-kicker">Stopping at</div><div class="plate-time">${t12(now)}</div><div class="plate-day">${esc(session.team)}</div>
     <div class="plate-foot"><span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${rng12(session.start,session.end)}</b></div></div>
     <p class="dnote">${early>0?'Ending '+early+' min before the booked end time. The timer stops now; the scheduled slot stays reserved.'
@@ -63,7 +66,8 @@ function advanceDialogHtml(){
   const session=sessionById(S.advAsk),pitch=PITCHES[session.pitch],settle=S.advMode==='settle';
   const paid=session.collected||0,outstanding=Math.max(0,session.amount-(session.discount||0)-paid);
   const value=Math.max(0,parseInt(S.advVal,10)||0),discounting=settle&&value>0&&value<outstanding;
-  const canSave=value>0&&value<=outstanding&&(!discounting||(can('manager')&&S.advReason.trim().length>=5));
+  const referenceOk=S.advPayMode==='Cash'||S.advReference.trim().length>=4;
+  const canSave=value>0&&value<=outstanding&&referenceOk&&(!discounting||(can('manager')&&S.advReason.trim().length>=5));
   const balance=settle?(outstanding-value>0?money(outstanding-value)+' discount against '+money(outstanding)+' outstanding'
     :outstanding-value<0?money(value-outstanding)+' above the outstanding amount':'Settles in full, no discount')
     :money(Math.max(0,outstanding-value))+' balance due';
@@ -72,14 +76,16 @@ function advanceDialogHtml(){
   const quick=[...new Set(quickAmounts.filter(amount=>amount>0&&amount<=outstanding))]
     .map(amount=>`<button class="${segCls(value===amount,true)}" data-act="adv-quick" data-v="${amount}" style="height:38px;border-radius:13px">
       ${amount===outstanding?'Full '+money(amount):!settle&&amount===configuredDeposit?'Deposit '+money(amount):(settle?'10% off · ':'')+money(amount)}</button>`).join('');
-  return `<div class="backdrop over"><div class="modal"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-    <span class="modal-kicker">${settle?'Record payment':'Advance received'}</span><button class="x" data-act="adv-cancel">&times;</button></div>
+  return `<div class="backdrop over"><div class="modal" role="dialog" aria-modal="true" aria-label="${settle?'Record payment':'Advance received'}" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <span class="modal-kicker">${settle?'Record payment':'Advance received'}</span><button class="x" data-act="adv-cancel" aria-label="Close payment dialog">&times;</button></div>
     <div style="margin-top:12px"><b style="display:block;font:700 21px var(--sans)">${esc(session.team)}</b><span class="dsub">${esc(pitch.name)} &middot; ${esc(pitch.sub)} &middot; ${rng12(session.start,session.end)}
     &middot; total ${money(session.amount)}${paid?' · '+money(paid)+' already paid':''}</span></div><label style="display:block;margin-top:14px">
     <span class="dlabel">Amount collected now</span><input class="dinput amount" id="adv-val" data-act="adv-val" value="${esc(S.advVal)}" placeholder="0"></label>
     <div class="optrow" style="margin-top:9px">${quick}</div><span class="dlabel" style="margin:14px 0 6px">Payment type</span>
     <div class="optrow">${PAY_MODES.map(mode=>`<button class="${segCls(S.advPayMode===mode,true)}" data-act="adv-mode" data-v="${mode}"
-    style="height:38px;border-radius:13px">${mode}</button>`).join('')}</div>${discounting?`<label style="display:block;margin-top:12px">
+    style="height:38px;border-radius:13px">${mode}</button>`).join('')}</div>${S.advPayMode!=='Cash'?`<label style="display:block;margin-top:12px">
+    <span class="dlabel">${S.advPayMode} reference · required</span><input class="dinput" id="adv-reference" data-act="adv-reference"
+    value="${esc(S.advReference)}" placeholder="Transaction or receipt reference"></label>`:''}${discounting?`<label style="display:block;margin-top:12px">
     <span class="dlabel">Discount reason · manager approval required</span><input class="dinput" id="adv-reason" data-act="adv-reason"
     value="${esc(S.advReason)}" placeholder="Why is the remaining ${money(outstanding-value)} being waived?"></label>`:''}
     <div style="font:700 14px var(--sans);margin-top:12px;color:${settle&&outstanding-value===0?'var(--lime)':'var(--warn)'}">${balance}</div>
@@ -90,13 +96,26 @@ function advanceDialogHtml(){
 
 function actionDialogHtml(){
   const ask=S.actionAsk;
-  return `<div class="backdrop"><div class="modal"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-    <span class="modal-kicker">${esc(ask.title)}</span><button class="x" data-act="action-cancel">&times;</button></div>
+  const bookingNote=ask.kind==='booking' ? '<p class="dnote" style="margin-top:10px">Release only reopens the slot. Refunds and account clearing are handled in Accounts before this step.</p>' : '';
+  return `<div class="backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(ask.title)}" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <span class="modal-kicker">${esc(ask.title)}</span><button class="x" data-act="action-cancel" aria-label="Close action dialog">&times;</button></div>
     <h2 class="h2 sm" style="margin-top:14px">${esc(ask.subject||'Confirm this change')}</h2><p class="dnote">This action changes operational state and will be written to the audit log against your account.</p>
-    <label style="display:block;margin-top:14px"><span class="dlabel">Reason · required</span><textarea class="reason" id="action-reason" data-act="action-reason"
+    ${bookingNote}<label style="display:block;margin-top:14px"><span class="dlabel">Reason · required</span><textarea class="reason" id="action-reason" data-act="action-reason"
     placeholder="Describe why this change is needed">${esc(S.actionReason)}</textarea></label><div style="display:flex;gap:9px;margin-top:16px">
     <button class="dbtn primary sm" data-act="action-confirm"${S.actionReason.trim().length<5?' disabled':''}>Confirm</button>
     <button class="dbtn sm" data-act="action-cancel">Cancel</button></div></div></div>`;
+}
+
+function staffDialogHtml(){
+  const ask=S.staffAsk;if(!ask)return '';
+  const labels={activate:'Activate staff account',deactivate:'Deactivate staff account',revoke:'Revoke staff sessions'};
+  return `<div class="backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(labels[ask.kind])}" tabindex="-1">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span class="modal-kicker">Owner approval</span>
+    <button class="x" data-act="staff-cancel" aria-label="Close staff action">&times;</button></div>
+    <h2 class="h2 sm" style="margin-top:14px">${esc(labels[ask.kind])}</h2><p class="dnote">${esc(ask.name)} · this access change is immediate and audited.</p>
+    <label style="display:block;margin-top:14px"><span class="dlabel">Reason · required</span><textarea class="reason" data-act="staff-reason" placeholder="Why is this access change needed?">${esc(S.staffReason)}</textarea></label>
+    <div style="display:flex;gap:9px;margin-top:16px"><button class="dbtn primary sm" data-act="staff-confirm"${S.staffReason.trim().length<5?' disabled':''}>Confirm</button>
+    <button class="dbtn sm" data-act="staff-cancel">Cancel</button></div></div></div>`;
 }
 
 function blockDialogHtml(){
@@ -105,9 +124,9 @@ function blockDialogHtml(){
   const session=card.raw,pitch=PITCHES[session.pitch];
   const rows=[['Booked via',session.source==='app'?'Turf app · online':'Counter · walk-in'],['Contact',session.contact],
     ['Amount',money(session.amount)],['Payment',card.payLabel]].concat(card.running?[['Played',durTxt(Math.max(0,nowMin()-(session.startedAt||session.start)))]]:[]);
-  return `<div class="backdrop"><div class="modal detail"><div class="detail-top"><div><div class="detail-time">${card.range}</div>
+  return `<div class="backdrop"><div class="modal detail" role="dialog" aria-modal="true" aria-label="Session details" tabindex="-1"><div class="detail-top"><div><div class="detail-time">${card.range}</div>
     <div class="sel-where">${esc(card.team)} &middot; ${esc(pitch.name)} &middot; ${esc(pitch.sub)}</div></div>
-    <button class="x" data-act="block-close">&times;</button></div><div class="detail-status"><span class="tag ondark">${card.statusLabel}</span>
+    <button class="x" data-act="block-close" aria-label="Close session details">&times;</button></div><div class="detail-status"><span class="tag ondark">${card.statusLabel}</span>
     <span class="dsub">${card.clock}</span></div>${card.running?`<div class="strack"><div class="fill${card.over?' over':''}" style="width:${card.pct}%"></div></div>`:''}
     ${rows.map(row=>`<div class="drow"><span>${esc(row[0])}</span><b>${esc(row[1])}</b></div>`).join('')}<span class="dlabel">Match</span>
     ${matchOptsHtml(card,true)}<span class="dlabel">Payment</span>${payOptsHtml(card,true)}<div class="detail-acts">
@@ -121,7 +140,9 @@ export function modalsHtml(){
   if(S.sel&&S.confirm)output+=confirmDialogHtml();
   if(S.timerAsk!=null&&sessionById(S.timerAsk))output+=timerDialogHtml();
   if(S.advAsk!=null&&sessionById(S.advAsk))output+=advanceDialogHtml();
+  if(S.refundAsk!=null)output+=refundDialogHtml();
   if(S.doneAsk!=null&&sessionById(S.doneAsk))output+=doneDialogHtml();
   if(S.actionAsk)output+=actionDialogHtml();
+  if(S.staffAsk)output+=staffDialogHtml();
   return output;
 }

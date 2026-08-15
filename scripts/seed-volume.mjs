@@ -5,7 +5,7 @@ const days = Number(process.env.TURF_SEED_DAYS || 10);
 const perDay = Number(process.env.TURF_SEED_PER_DAY || 15);
 
 if (!email || !password){
-  console.error('Set TURF_SEED_EMAIL and TURF_SEED_PASSWORD to an owner or operator account.');
+  console.error('Set TURF_SEED_EMAIL and TURF_SEED_PASSWORD to an owner or manager account.');
   process.exit(1);
 }
 if (!Number.isInteger(days) || days < 1 || days > 31 || !Number.isInteger(perDay) || perDay < 1 || perDay > 30){
@@ -106,17 +106,20 @@ for (const original of created){
       status:'noshow', reason:'Volume seed simulated no-show', atMinute:booking.start,
     })).booking;
   } else if (past || (current && booking.end <= nowMinute)){
-    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start })).booking;
-    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'done', atMinute:booking.end })).booking;
+    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start,reason:'Volume seed time correction' })).booking;
+    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'done', atMinute:booking.end,reason:'Volume seed time correction' })).booking;
   } else if (current && booking.start <= nowMinute && booking.end > nowMinute){
-    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start })).booking;
+    booking = (await post(`/api/bookings/${booking.id}/status`, { status:'running', atMinute:booking.start,reason:'Volume seed time correction' })).booking;
   }
   if (booking.status === 'noshow') continue;
   if (bookingIndex % 3 === 0){
-    await post(`/api/bookings/${booking.id}/payments`, { amount:booking.amount, mode:bookingIndex % 2 ? 'Card' : 'UPI', settle:true });
+    const mode=bookingIndex % 2 ? 'Card' : 'UPI';
+    await post(`/api/bookings/${booking.id}/payments`, { amount:booking.amount, mode, settle:true,
+      reference:`VOLUME-${booking.id.slice(0,12)}`,idempotencyKey:`volume-payment-${booking.id}` });
   } else if (bookingIndex % 3 === 1){
     const deposit = Math.min(initial.settings?.depositAmount || 500,booking.amount);
-    if (deposit > 0) await post(`/api/bookings/${booking.id}/payments`, { amount:deposit, mode:'Cash', settle:false });
+    if (deposit > 0) await post(`/api/bookings/${booking.id}/payments`, { amount:deposit, mode:'Cash', settle:false,
+      idempotencyKey:`volume-payment-${booking.id}` });
   }
 }
 

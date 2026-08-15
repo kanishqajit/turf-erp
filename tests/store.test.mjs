@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createStore, ProductError } from '../server/store.mjs';
@@ -29,6 +29,7 @@ function fixture(){
 function expectCode(code, fn){
   assert.throws(fn, error => error instanceof ProductError && error.code === code);
 }
+const key = label => `${label}-00000000-0000-4000-8000-000000000000`;
 
 test('accounts, sessions, and operational records survive a process restart', () => {
   const dir = mkdtempSync(join(tmpdir(), 'turf-store-'));
@@ -44,6 +45,8 @@ test('accounts, sessions, and operational records survive a process restart', ()
     store.close();
 
     store = createStore({ filename });
+    assert.equal(statSync(dir).mode & 0o777,0o700);
+    assert.equal(statSync(filename).mode & 0o777,0o600);
     const authenticated = store.authenticate(ownerInput.email, ownerInput.password);
     const session = store.createSession(authenticated);
     assert.equal(store.sessionUser(session.token).role, 'owner');
@@ -51,6 +54,18 @@ test('accounts, sessions, and operational records survive a process restart', ()
     assert.equal(store.getSettings().depositAmount, 750);
     store.close();
   } finally { rmSync(dir, { recursive:true, force:true }); }
+});
+
+test('sessions expire after the configured idle window', () => {
+  const store=createStore({filename:':memory:',sessionIdleMs:30*60*1000});
+  try{
+    const owner=store.createUser(ownerInput),session=store.createSession(owner);
+    assert.equal(store.sessionUser(session.token).role,'owner');
+    store.db.prepare('UPDATE sessions SET last_seen_at=?').run(Date.now()-31*60*1000);
+    assert.equal(store.sessionUser(session.token),null);
+    store.deleteExpired();
+    assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n,0);
+  }finally{store.close();}
 });
 
 test('deposit policy is configurable by managers, validated, shared, and audited', () => {
@@ -84,7 +99,7 @@ test('custom bookings are collision checked and appear in the shared session sta
   try {
     const [created] = store.createBookings([{
       date:'2026-08-14', pitch:0, start:1050, end:1110,
-      team:'First Team', contact:'+91 90000 00001', kind:'custom',
+      team:'First Team', contact:'+91 90000 00001', kind:'custom', source:'app',
     }], operator);
     expectCode('booking_conflict', () => store.createBookings([{
       date:'2026-08-14', pitch:0, start:1080, end:1140,
@@ -94,6 +109,9 @@ test('custom bookings are collision checked and appear in the shared session sta
     assert.equal(state.bookings.length, 1);
     assert.equal(state.bookings[0].id, created.id);
     assert.equal(state.bookings[0].kind, 'custom');
+    assert.equal(state.bookings[0].source, 'counter');
+    expectCode('invalid_customer',()=>store.createBookings([{date:'2026-08-14',pitch:1,start:900,end:960,
+      team:'Bad Contact',contact:'123'}],operator));
   } finally { store.close(); }
 });
 
@@ -170,9 +188,9 @@ test('privileged releases and reversals require role, confirmation reason, and c
       date:'2026-08-21', pitch:0, start:900, end:960,
       team:'Status Team', contact:'+91 90000 00011',
     }], operator);
-    store.setStatus(second.id, 'noshow', operator, 'Team did not arrive');
+    store.setStatus(second.id, 'noshow', manager, 'Team did not arrive', second.start);
     expectCode('forbidden', () => store.setStatus(second.id, 'upcoming', operator, 'Wrong status'));
-    store.setStatus(second.id, 'upcoming', manager, 'Operator marked wrong team');
+    store.setStatus(second.id, 'upcoming', manager, 'Operator marked wrong team', second.start);
 
     const actions = store.listAudit(50, owner).map(event => event.action);
     assert.ok(actions.includes('booking.released'));
@@ -188,19 +206,66 @@ test('payments are append-only and discounts need manager authority', () => {
       date:'2026-08-22', pitch:0, start:900, end:960,
       team:'Payment Team', contact:'+91 90000 00012',
     }], operator);
-    let current = store.recordPayment(booking.id, { amount:500, mode:'UPI' }, operator);
+    let current = store.recordPayment(booking.id, { amount:500, mode:'UPI', reference:'UPI-TEST-001', idempotencyKey:key('advance') }, operator);
     assert.equal(current.collected, 500);
     assert.equal(current.pay, 'Advance paid');
     expectCode('payment_reconciliation_required', () =>
       store.releaseBooking(booking.id, manager, 'Customer requested cancellation'));
-    expectCode('forbidden', () => store.recordPayment(booking.id, {
-      amount:1000, mode:'Cash', settle:true, reason:'Manager-approved offer',
+    expectCode('forbidden', () => store.recordRefund(booking.id, {
+      amount:500, mode:'UPI', reason:'Customer cancellation',
+      reference:'UPI-REF-001',idempotencyKey:key('forbidden-refund'),
     }, operator));
-    current = store.recordPayment(booking.id, {
-      amount:1200, mode:'Cash', settle:true, reason:'Service recovery discount',
+    current = store.recordRefund(booking.id, {
+      amount:500, mode:'UPI', reason:'Customer cancellation',
+      reference:'UPI-REF-001',idempotencyKey:key('refund'),
+    }, manager);
+    assert.equal(current.collected, 0);
+    store.releaseBooking(booking.id, manager, 'Customer requested cancellation');
+
+    const [discounted] = store.createBookings([{
+      date:'2026-08-23', pitch:0, start:900, end:960,
+      team:'Discount Team', contact:'+91 90000 00014',
+    }], operator);
+    expectCode('forbidden', () => store.recordPayment(discounted.id, {
+      amount:1000, mode:'Cash', settle:true, reason:'Manager-approved offer',
+      idempotencyKey:key('operator-discount'),
+    }, operator));
+    current = store.recordPayment(discounted.id, {
+      amount:1700, mode:'Cash', settle:true, reason:'Service recovery discount',
+      idempotencyKey:key('manager-discount'),
     }, manager);
     assert.equal(current.collected, 1700);
     assert.equal(current.discount, 100);
     assert.equal(current.pay, 'Payment done');
+  } finally { store.close(); }
+});
+
+test('financial writes are idempotent, rail constrained, and reject stale booking versions', () => {
+  const { store, operator, manager } = fixture();
+  try {
+    const [booking]=store.createBookings([{ date:'2026-08-24',pitch:0,start:900,end:960,
+      team:'Safe Ledger',contact:'+91 90000 00020' }],operator);
+    const input={amount:600,mode:'UPI',reference:'UPI-SAFE-001',idempotencyKey:key('safe-payment'),version:booking.version};
+    const first=store.recordPayment(booking.id,input,operator),again=store.recordPayment(booking.id,input,operator);
+    assert.equal(first.collected,600);assert.equal(again.collected,600);
+    assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM payment_events WHERE booking_id=? AND kind='payment'").get(booking.id).n,1);
+    expectCode('refund_exceeds_mode',()=>store.recordRefund(booking.id,{amount:100,mode:'Cash',reason:'Wrong refund rail',
+      idempotencyKey:key('wrong-rail'),version:first.version},manager));
+    expectCode('stale_booking',()=>store.extendBooking(booking.id,30,operator,booking.version));
+  } finally { store.close(); }
+});
+
+test('staff accounts require a first-login password change and owners can revoke access safely', () => {
+  const { store, owner } = fixture();
+  try {
+    const staff=store.createUser({email:'new@example.test',name:'New Staff',role:'operator',password:'temporary password 123'},owner);
+    assert.equal(store.authenticate('new@example.test','temporary password 123').mustChangePassword,true);
+    const logged=store.authenticate('new@example.test','temporary password 123');
+    const session=store.createSession(logged),actor={...staff,session_id:store.sessionUser(session.token).session_id};
+    store.changePassword(actor,'temporary password 123','private replacement 456');
+    assert.equal(store.authenticate('new@example.test','private replacement 456').mustChangePassword,false);
+    store.setUserActive(staff.id,false,owner,'Staff member left venue');
+    expectCode('invalid_credentials',()=>store.authenticate('new@example.test','private replacement 456'));
+    expectCode('self_deactivation',()=>store.setUserActive(owner.id,false,owner,'Accidental self removal'));
   } finally { store.close(); }
 });

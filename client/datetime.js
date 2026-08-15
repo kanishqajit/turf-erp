@@ -16,14 +16,32 @@ export const toMin = value => {
 };
 export function t12(minute){
   const value = Math.floor(minute), hour = Math.floor(value / 60) % 24, mins = value % 60;
-  return (hour % 12 === 0 ? 12 : hour % 12) + (mins ? ':' + String(mins).padStart(2, '0') : '') + (hour < 12 ? 'AM' : 'PM');
+  return (hour % 12 === 0 ? 12 : hour % 12) + ':' + String(mins).padStart(2, '0') + ' ' + (hour < 12 ? 'AM' : 'PM');
+}
+function compactParts(minute){
+  const value = Math.floor(minute), hour = Math.floor(value / 60) % 24, mins = value % 60;
+  return {
+    hour:hour % 12 === 0 ? 12 : hour % 12,
+    mins,
+    period:hour < 12 ? 'AM' : 'PM',
+  };
+}
+function compactTime(minute, showPeriod){
+  const parts = compactParts(minute);
+  return parts.hour + (parts.mins ? ':' + String(parts.mins).padStart(2, '0') : '')
+    + (showPeriod ? ' ' + parts.period : '');
 }
 export function rng12(start, end){
-  const first = t12(start), second = t12(end);
-  return first.slice(-2) === second.slice(-2) ? first.slice(0, -2) + '–' + second : first + '–' + second;
+  const startParts = compactParts(start), endParts = compactParts(end);
+  const samePeriod = startParts.period === endParts.period;
+  return compactTime(start, !samePeriod) + ' to ' + compactTime(end, true);
 }
 export const hourT12 = hour => t12(hour * 60);
 export const hourRng12 = hour => rng12(hour * 60, (hour + 1) * 60);
+export const clock12 = value => {
+  const date = new Date(value);
+  return t12(date.getHours() * 60 + date.getMinutes());
+};
 export const hours = () => Array.from({ length:END_HOUR - START_HOUR }, (_, index) => START_HOUR + index);
 export const durTxt = minutes => Math.floor(minutes / 60) + 'h ' + String(Math.abs(Math.round(minutes % 60))).padStart(2,'0') + 'm';
 export const pos = minute => Math.max(0, Math.min(100, ((minute - DAY_START) / SPAN) * 100));

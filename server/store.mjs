@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -26,6 +26,10 @@ const nowMs = () => Date.now();
 const isoNow = () => new Date().toISOString();
 const tokenHash = token => createHash('sha256').update(token).digest('hex');
 const clean = (value, max = 300) => String(value ?? '').trim().slice(0, max);
+const validContact = value => {
+  const text=clean(value,80),digits=text.replace(/\D/g,'');
+  return digits.length >= 8 && digits.length <= 15 && /^[+\d][\d\s().-]*$/.test(text);
+};
 const validDate = value => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
@@ -37,7 +41,8 @@ const requireRole = (actor, role) => {
 };
 
 function passwordRecord(password){
-  if (String(password).length < 12) fail(400, 'weak_password', 'Password must contain at least 12 characters.');
+  if (String(password).length < 12 || String(password).length > 256)
+    fail(400, 'weak_password', 'Password must contain between 12 and 256 characters.');
   const salt = randomBytes(24);
   const hash = scryptSync(String(password), salt, 64);
   return { salt:salt.toString('hex'), hash:hash.toString('hex') };
@@ -67,10 +72,18 @@ function priceFor({ pitch, start, end }){
   return Math.round(PITCHES[pitch].rate * (end - start) / 60 + (end > 18 * 60 ? 300 : 0));
 }
 
-export function createStore({ filename = 'data/turf.sqlite' } = {}){
-  if (filename !== ':memory:') mkdirSync(dirname(filename), { recursive:true });
+export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 * 60 * 1000,
+  timeZone = process.env.TURF_TIME_ZONE || 'Asia/Kolkata' } = {}){
+  try { new Intl.DateTimeFormat('en', { timeZone }).format(new Date()); }
+  catch (_) { fail(500, 'invalid_time_zone', 'TURF_TIME_ZONE must be a valid IANA time zone.'); }
+  if (filename !== ':memory:'){
+    mkdirSync(dirname(filename), { recursive:true, mode:0o700 });
+    try { chmodSync(dirname(filename), 0o700); } catch (_) {}
+  }
   const db = new DatabaseSync(filename);
   db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
+  if (filename !== ':memory:') for (const path of [filename, `${filename}-wal`, `${filename}-shm`])
+    if (existsSync(path)) try { chmodSync(path, 0o600); } catch (_) {}
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -80,6 +93,8 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
       password_salt TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       active INTEGER NOT NULL DEFAULT 1,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
+      password_changed_at TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sessions (
@@ -150,6 +165,8 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
       amount INTEGER NOT NULL,
       mode TEXT NOT NULL CHECK(mode IN ('Cash','UPI','Card')),
       kind TEXT NOT NULL DEFAULT 'payment' CHECK(kind IN ('payment','refund')),
+      reference TEXT NOT NULL DEFAULT '',
+      idempotency_key TEXT,
       reason TEXT NOT NULL DEFAULT '',
       created_by TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL
@@ -174,6 +191,13 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
       updated_at TEXT NOT NULL
     );
   `);
+  const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
+  if (!userColumns.has('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+  if (!userColumns.has('password_changed_at')) db.exec('ALTER TABLE users ADD COLUMN password_changed_at TEXT');
+  const paymentColumns = new Set(db.prepare('PRAGMA table_info(payment_events)').all().map(column => column.name));
+  if (!paymentColumns.has('reference')) db.exec("ALTER TABLE payment_events ADD COLUMN reference TEXT NOT NULL DEFAULT ''");
+  if (!paymentColumns.has('idempotency_key')) db.exec('ALTER TABLE payment_events ADD COLUMN idempotency_key TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_idx ON payment_events(idempotency_key) WHERE idempotency_key IS NOT NULL');
   db.prepare(`INSERT OR IGNORE INTO venue_settings (key,value_integer,updated_by,updated_at)
     VALUES ('deposit_amount',500,NULL,?)`).run(isoNow());
 
@@ -194,10 +218,11 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
     if (!/^\S+@\S+\.\S+$/.test(email) || !name || !ROLES[role]) fail(400, 'invalid_user', 'Valid name, email and role are required.');
     if (db.prepare('SELECT COUNT(*) AS n FROM users').get().n > 0) requireRole(actor, 'owner');
     const secret = passwordRecord(password);
-    const user = { id:randomUUID(), email, name, role, created_at:isoNow() };
+    const mustChangePassword = actor ? 1 : 0;
+    const user = { id:randomUUID(), email, name, role, mustChangePassword:!!mustChangePassword, created_at:isoNow() };
     try {
-      db.prepare(`INSERT INTO users (id,email,name,role,password_salt,password_hash,created_at)
-        VALUES (?,?,?,?,?,?,?)`).run(user.id, email, name, role, secret.salt, secret.hash, user.created_at);
+      db.prepare(`INSERT INTO users (id,email,name,role,password_salt,password_hash,must_change_password,created_at)
+        VALUES (?,?,?,?,?,?,?,?)`).run(user.id, email, name, role, secret.salt, secret.hash,mustChangePassword,user.created_at);
     } catch (error){
       if (String(error).includes('UNIQUE')) fail(409, 'email_exists', 'An account already uses this email.');
       throw error;
@@ -207,9 +232,12 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
   }
 
   function authenticate(email, password){
+    if (typeof password !== 'string' || password.length > 256) fail(401, 'invalid_credentials', 'Email or password is incorrect.');
     const user = db.prepare('SELECT * FROM users WHERE email = ? AND active = 1').get(clean(email, 200).toLowerCase());
-    if (!user || !passwordMatches(password, user.password_salt, user.password_hash)) fail(401, 'invalid_credentials', 'Email or password is incorrect.');
-    return { id:user.id, email:user.email, name:user.name, role:user.role };
+    const fallbackSalt = '00'.repeat(24), fallbackHash = '00'.repeat(64);
+    const matched = passwordMatches(password, user?.password_salt || fallbackSalt, user?.password_hash || fallbackHash);
+    if (!user || !matched) fail(401, 'invalid_credentials', 'Email or password is incorrect.');
+    return { id:user.id, email:user.email, name:user.name, role:user.role, mustChangePassword:!!user.must_change_password };
   }
 
   function createSession(user, ttlMs = 12 * 60 * 60 * 1000){
@@ -224,16 +252,19 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
 
   function sessionUser(token){
     if (!token) return null;
-    const row = db.prepare(`SELECT s.id AS session_id,s.csrf_token,s.expires_at,u.id,u.email,u.name,u.role
+    const row = db.prepare(`SELECT s.id AS session_id,s.csrf_token,s.expires_at,u.id,u.email,u.name,u.role,u.must_change_password
       FROM sessions s JOIN users u ON u.id=s.user_id
-      WHERE s.token_hash=? AND s.expires_at>? AND u.active=1`).get(tokenHash(token), nowMs());
+      WHERE s.token_hash=? AND s.expires_at>? AND s.last_seen_at>? AND u.active=1`).get(tokenHash(token), nowMs(), nowMs() - sessionIdleMs);
     if (!row) return null;
     db.prepare('UPDATE sessions SET last_seen_at=? WHERE id=?').run(nowMs(), row.session_id);
     return row;
   }
 
   function deleteSession(token){ if (token) db.prepare('DELETE FROM sessions WHERE token_hash=?').run(tokenHash(token)); }
-  function deleteExpired(){ db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(nowMs()); db.prepare('DELETE FROM holds WHERE expires_at<=?').run(nowMs()); }
+  function deleteExpired(){
+    db.prepare('DELETE FROM sessions WHERE expires_at<=? OR last_seen_at<=?').run(nowMs(), nowMs() - sessionIdleMs);
+    db.prepare('DELETE FROM holds WHERE expires_at<=?').run(nowMs());
+  }
 
   function assertAvailable(window, { ignoreBookingId = null, ignoreHoldId = null } = {}){
     const conflict = db.prepare(`SELECT id,team,start,end FROM bookings
@@ -252,10 +283,10 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
   function normalizeBooking(input, actor){
     const window = validateWindow(input);
     const team = clean(input.team, 120), contact = clean(input.contact, 80);
-    if (!team || contact.length < 6) fail(400, 'invalid_customer', 'Name/team and a valid contact are required.');
+    if (!team || !validContact(contact)) fail(400, 'invalid_customer', 'Name/team and a contact containing 8 to 15 digits are required.');
     const kind = ['standard','custom','group'].includes(input.kind) ? input.kind : 'standard';
     return { ...window, id:randomUUID(), team, contact, notes:clean(input.notes, 500),
-      source:input.source === 'app' ? 'app' : 'counter', kind,
+      source:'counter', kind,
       groupType:kind === 'group' ? clean(input.groupType, 30) : null,
       groupId:kind === 'group' ? clean(input.groupId, 80) || randomUUID() : null,
       totalAmount:priceFor(window), createdBy:actor.id };
@@ -282,7 +313,10 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
 
   function bookingSelect(where = '1=1'){
     return `SELECT b.*,
-      COALESCE((SELECT SUM(CASE kind WHEN 'refund' THEN -amount ELSE amount END) FROM payment_events p WHERE p.booking_id=b.id),0) AS collected
+      COALESCE((SELECT SUM(CASE kind WHEN 'refund' THEN -amount ELSE amount END) FROM payment_events p WHERE p.booking_id=b.id),0) AS collected,
+      COALESCE((SELECT SUM(CASE kind WHEN 'refund' THEN -amount ELSE amount END) FROM payment_events p WHERE p.booking_id=b.id AND mode='Cash'),0) AS collected_cash,
+      COALESCE((SELECT SUM(CASE kind WHEN 'refund' THEN -amount ELSE amount END) FROM payment_events p WHERE p.booking_id=b.id AND mode='UPI'),0) AS collected_upi,
+      COALESCE((SELECT SUM(CASE kind WHEN 'refund' THEN -amount ELSE amount END) FROM payment_events p WHERE p.booking_id=b.id AND mode='Card'),0) AS collected_card
       FROM bookings b WHERE ${where}`;
   }
   function shapeBooking(row){
@@ -293,10 +327,16 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
       groupType:row.group_type, groupId:row.group_id, status:row.status,
       startedAt:row.started_at, endedAt:row.ended_at, amount:row.total_amount,
       discount:row.discount_amount, collected:paid,
+      collectedByMode:{ Cash:Number(row.collected_cash || 0), UPI:Number(row.collected_upi || 0), Card:Number(row.collected_card || 0) },
       advance:due > 0 ? paid : 0, pay:due === 0 ? 'Payment done' : paid > 0 ? 'Advance paid' : 'Payment at venue',
       version:row.version, createdAt:row.created_at, updatedAt:row.updated_at };
   }
   const getBooking = id => shapeBooking(db.prepare(bookingSelect('b.id=?')).get(id));
+  function assertVersion(booking, expectedVersion){
+    if (expectedVersion === undefined || expectedVersion === null || expectedVersion === '') return;
+    if (!Number.isInteger(Number(expectedVersion)) || Number(expectedVersion) !== booking.version)
+      fail(409, 'stale_booking', 'This booking changed on another console. Refresh and review the latest record before trying again.');
+  }
 
   function listState(from, to){
     if (!validDate(from) || !validDate(to) || from > to) fail(400, 'invalid_range', 'A valid from/to date range is required.');
@@ -314,7 +354,22 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
       id:row.id,date:row.date,pitch:row.pitch,start:row.start,end:row.end,reason:row.reason,
       createdBy:row.created_by_name,createdAt:row.created_at,
     }));
-    return { bookings, holds, blocks, settings:getSettings(), serverTime:new Date().toISOString() };
+    return { bookings, holds, blocks, settings:getSettings(), serverTime:new Date().toISOString(), timeZone };
+  }
+
+  function listAccounts(from, to, actor){
+    requireRole(actor, 'operator');
+    if (!validDate(from) || !validDate(to) || from > to) fail(400, 'invalid_range', 'A valid from/to date range is required.');
+    if ((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / 86400000 > 366)
+      fail(400, 'range_too_large', 'Account queries are limited to 367 days.');
+    const bookings = db.prepare(bookingSelect('b.date BETWEEN ? AND ?') + ' ORDER BY b.date DESC,b.start DESC,b.pitch').all(from,to).map(shapeBooking);
+    const payments = db.prepare(`SELECT p.id,p.booking_id,p.amount,p.mode,p.kind,p.reference,p.reason,p.created_at,
+      u.name AS created_by_name FROM payment_events p JOIN bookings b ON b.id=p.booking_id
+      JOIN users u ON u.id=p.created_by WHERE b.date BETWEEN ? AND ? ORDER BY p.created_at DESC,p.rowid DESC`).all(from,to).map(row => ({
+        id:row.id,bookingId:row.booking_id,amount:row.amount,mode:row.mode,kind:row.kind,reference:row.reference,
+        reason:row.reason,createdAt:row.created_at,createdBy:row.created_by_name,
+      }));
+    return { bookings, payments };
   }
 
   function getSettings(){
@@ -341,7 +396,7 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
     requireRole(actor, 'operator');
     const window = validateWindow(input);
     const team = clean(input.team, 120), contact = clean(input.contact, 80);
-    if (!team || contact.length < 6) fail(400, 'invalid_customer', 'Name/team and a valid contact are required.');
+    if (!team || !validContact(contact)) fail(400, 'invalid_customer', 'Name/team and a contact containing 8 to 15 digits are required.');
     return tx(() => {
       assertAvailable(window);
       const hold = { id:randomUUID(), ...window, team, contact, notes:clean(input.notes,500),
@@ -403,34 +458,56 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
     });
   }
 
-  function releaseBooking(id, actor, reason){
+  function releaseBooking(id, actor, reason, expectedVersion){
     requireRole(actor, 'manager'); reason = clean(reason,500);
     if (reason.length < 5) fail(400, 'reason_required', 'A release reason of at least 5 characters is required.');
     return tx(() => {
       const before = getBooking(id);
       if (!before || before.status === 'cancelled') fail(404, 'not_found', 'Booking not found.');
+      assertVersion(before, expectedVersion);
       if (before.collected > 0)
-        fail(409, 'payment_reconciliation_required', 'Refund or reconcile recorded payments before releasing this booking.');
+        fail(409, 'payment_reconciliation_required', 'Clear recorded payments in Accounts before releasing this booking.');
       db.prepare(`UPDATE bookings SET status='cancelled',version=version+1,updated_at=? WHERE id=?`).run(isoNow(),id);
       audit(actor, 'booking.released', 'booking', id, before, getBooking(id), reason);
     });
   }
 
-  function setStatus(id, status, actor, reason = '', atMinute = null){
+  function setStatus(id, status, actor, reason = '', atMinute = null, expectedVersion){
     requireRole(actor, 'operator'); status = clean(status,20); reason = clean(reason,500);
     const allowed = ['upcoming','running','done','noshow'];
     if (!allowed.includes(status)) fail(400, 'invalid_status', 'Unsupported session status.');
     return tx(() => {
       const before = getBooking(id);
       if (!before) fail(404, 'not_found', 'Booking not found.');
+      assertVersion(before, expectedVersion);
       if (before.status === status) return before;
       const normal = (before.status === 'upcoming' && ['running','noshow'].includes(status))
         || (before.status === 'running' && status === 'done');
       if (!normal){ requireRole(actor, 'manager'); if (reason.length < 5) fail(400,'reason_required','A reason is required for this status reversal.'); }
       if (status === 'noshow' && reason.length < 5) fail(400,'reason_required','A no-show reason is required.');
-      const minute = Number.isFinite(Number(atMinute)) ? Math.max(0, Math.min(1439, Math.round(Number(atMinute)))) : null;
-      const started = status === 'running' ? (minute ?? before.start) : before.startedAt;
-      const ended = status === 'done' ? (minute ?? before.end) : before.endedAt;
+      const dateParts = new Intl.DateTimeFormat('en-CA', { timeZone, year:'numeric', month:'2-digit', day:'2-digit' })
+        .formatToParts(new Date()).reduce((result,part) => (result[part.type]=part.value,result),{});
+      const timeParts = new Intl.DateTimeFormat('en-GB', { timeZone, hour:'2-digit', minute:'2-digit', hourCycle:'h23' })
+        .formatToParts(new Date()).reduce((result,part) => (result[part.type]=part.value,result),{});
+      const today = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+      const currentMinute = Number(timeParts.hour) * 60 + Number(timeParts.minute);
+      const manual = atMinute !== null && atMinute !== undefined && atMinute !== '';
+      if (manual){
+        requireRole(actor, 'manager');
+        if (reason.length < 5) fail(400, 'reason_required', 'A reason is required when correcting a session time.');
+      } else if (before.date !== today){
+        fail(409, 'session_date_mismatch', 'Past or future sessions require a manager time correction with a reason.');
+      }
+      const minute = manual ? Math.max(0, Math.min(1439, Math.round(Number(atMinute)))) : currentMinute;
+      if (!Number.isFinite(minute)) fail(400, 'invalid_time', 'A valid session time is required.');
+      if (!manual && status === 'running' && minute < before.start - 15)
+        fail(409, 'session_too_early', 'This session cannot start more than 15 minutes before its booked time.');
+      if (!manual && status === 'running' && minute >= before.end)
+        fail(409, 'session_elapsed', 'This booking has already ended. Resolve it as a no-show or ask a manager to correct its time.');
+      const started = status === 'running' ? minute : before.startedAt;
+      const ended = status === 'done' ? minute : before.endedAt;
+      if (status === 'done' && started != null && ended < started)
+        fail(409, 'invalid_session_sequence', 'A session cannot end before it started.');
       db.prepare(`UPDATE bookings SET status=?,started_at=?,ended_at=?,version=version+1,updated_at=? WHERE id=?`)
         .run(status, started, ended, isoNow(), id);
       const after = getBooking(id);
@@ -439,12 +516,13 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
     });
   }
 
-  function extendBooking(id, minutes, actor){
+  function extendBooking(id, minutes, actor, expectedVersion){
     requireRole(actor, 'operator'); minutes = Number(minutes);
     if (![30,60].includes(minutes)) fail(400, 'invalid_extension', 'Extension must be 30 or 60 minutes.');
     return tx(() => {
       const before = getBooking(id);
       if (!before || !['upcoming','running'].includes(before.status)) fail(409, 'not_extendable', 'Only upcoming or running bookings can be extended.');
+      assertVersion(before, expectedVersion);
       const window = validateWindow({ ...before, end:before.end + minutes });
       assertAvailable(window, { ignoreBookingId:id });
       const total = priceFor(window);
@@ -459,12 +537,21 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
   function recordPayment(id, input, actor){
     requireRole(actor, 'operator');
     const amount = Math.round(Number(input.amount)), mode = clean(input.mode,20), settle = !!input.settle;
-    const reason = clean(input.reason,500);
+    const reason = clean(input.reason,500), reference = clean(input.reference,120);
+    const idempotencyKey = clean(input.idempotencyKey,80);
     if (!Number.isFinite(amount) || amount <= 0) fail(400, 'invalid_amount', 'Payment amount must be greater than zero.');
     if (!['Cash','UPI','Card'].includes(mode)) fail(400, 'invalid_mode', 'Payment mode must be Cash, UPI or Card.');
+    if (idempotencyKey.length < 12) fail(400, 'idempotency_required', 'A valid payment idempotency key is required.');
+    if (mode !== 'Cash' && reference.length < 4) fail(400, 'reference_required', `${mode} reference must contain at least 4 characters.`);
     return tx(() => {
+      const prior = db.prepare('SELECT booking_id,amount,mode,kind FROM payment_events WHERE idempotency_key=?').get(idempotencyKey);
+      if (prior){
+        if (prior.booking_id === id && prior.amount === amount && prior.mode === mode && prior.kind === 'payment') return getBooking(id);
+        fail(409, 'idempotency_conflict', 'This payment key was already used for a different account event.');
+      }
       const before = getBooking(id);
       if (!before) fail(404, 'not_found', 'Booking not found.');
+      assertVersion(before, input.version);
       const outstanding = Math.max(0, before.amount - before.discount - before.collected);
       if (amount > outstanding) fail(409, 'overpayment', 'Payment exceeds the outstanding balance.');
       let discount = 0;
@@ -474,13 +561,43 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
         discount = outstanding - amount;
         if (discount > before.amount * .2 && actor.role !== 'owner') fail(403, 'discount_limit', 'Discounts above 20% require owner approval.');
       }
-      db.prepare(`INSERT INTO payment_events (id,booking_id,amount,mode,reason,created_by,created_at)
-        VALUES (?,?,?,?,?,?,?)`).run(randomUUID(),id,amount,mode,reason,actor.id,isoNow());
+      db.prepare(`INSERT INTO payment_events (id,booking_id,amount,mode,reference,idempotency_key,reason,created_by,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(randomUUID(),id,amount,mode,reference,idempotencyKey,reason,actor.id,isoNow());
       if (discount) db.prepare('UPDATE bookings SET discount_amount=discount_amount+?,version=version+1,updated_at=? WHERE id=?')
         .run(discount,isoNow(),id);
       else db.prepare('UPDATE bookings SET version=version+1,updated_at=? WHERE id=?').run(isoNow(),id);
       const after = getBooking(id);
       audit(actor, settle ? 'payment.settled' : 'payment.recorded', 'booking', id, before, after, reason);
+      return after;
+    });
+  }
+
+  function recordRefund(id, input, actor){
+    requireRole(actor, 'manager');
+    const amount = Math.round(Number(input.amount)), mode = clean(input.mode,20), reason = clean(input.reason,500);
+    const reference = clean(input.reference,120), idempotencyKey = clean(input.idempotencyKey,80);
+    if (!Number.isFinite(amount) || amount <= 0) fail(400, 'invalid_amount', 'Refund amount must be greater than zero.');
+    if (!['Cash','UPI','Card'].includes(mode)) fail(400, 'invalid_mode', 'Refund mode must be Cash, UPI or Card.');
+    if (reason.length < 5) fail(400, 'reason_required', 'A refund reason is required.');
+    if (idempotencyKey.length < 12) fail(400, 'idempotency_required', 'A valid refund idempotency key is required.');
+    if (mode !== 'Cash' && reference.length < 4) fail(400, 'reference_required', `${mode} reference must contain at least 4 characters.`);
+    return tx(() => {
+      const prior = db.prepare('SELECT booking_id,amount,mode,kind FROM payment_events WHERE idempotency_key=?').get(idempotencyKey);
+      if (prior){
+        if (prior.booking_id === id && prior.amount === amount && prior.mode === mode && prior.kind === 'refund') return getBooking(id);
+        fail(409, 'idempotency_conflict', 'This refund key was already used for a different account event.');
+      }
+      const before = getBooking(id);
+      if (!before) fail(404, 'not_found', 'Booking not found.');
+      assertVersion(before, input.version);
+      if (amount > before.collected) fail(409, 'refund_exceeds_collected', 'Refund cannot exceed the amount collected.');
+      if (amount > Number(before.collectedByMode?.[mode] || 0))
+        fail(409, 'refund_exceeds_mode', `Refund cannot exceed the ${mode} amount collected.`);
+      db.prepare(`INSERT INTO payment_events (id,booking_id,amount,mode,kind,reference,idempotency_key,reason,created_by,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),id,amount,mode,'refund',reference,idempotencyKey,reason,actor.id,isoNow());
+      db.prepare('UPDATE bookings SET version=version+1,updated_at=? WHERE id=?').run(isoNow(),id);
+      const after = getBooking(id);
+      audit(actor, 'payment.refunded', 'booking', id, before, after, reason);
       return after;
     });
   }
@@ -496,6 +613,64 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
     }));
   }
 
+  function changePassword(actor, currentPassword, newPassword){
+    const row = db.prepare('SELECT * FROM users WHERE id=? AND active=1').get(actor?.id);
+    if (!row || !passwordMatches(currentPassword, row.password_salt, row.password_hash))
+      fail(401, 'invalid_current_password', 'Current password is incorrect.');
+    const secret = passwordRecord(newPassword);
+    if (passwordMatches(newPassword, row.password_salt, row.password_hash))
+      fail(400, 'password_reused', 'Choose a password different from the current password.');
+    return tx(() => {
+      db.prepare(`UPDATE users SET password_salt=?,password_hash=?,must_change_password=0,password_changed_at=? WHERE id=?`)
+        .run(secret.salt,secret.hash,isoNow(),row.id);
+      db.prepare('DELETE FROM sessions WHERE user_id=? AND id<>?').run(row.id, actor.session_id || '');
+      const after = { id:row.id,email:row.email,name:row.name,role:row.role,active:true,mustChangePassword:false };
+      audit(actor, 'user.password.changed', 'user', row.id, null, after);
+      return after;
+    });
+  }
+
+  function listUsers(actor){
+    requireRole(actor, 'owner');
+    return db.prepare(`SELECT id,email,name,role,active,must_change_password,created_at,password_changed_at
+      FROM users ORDER BY active DESC,role DESC,name COLLATE NOCASE`).all().map(row => ({
+        id:row.id,email:row.email,name:row.name,role:row.role,active:!!row.active,
+        mustChangePassword:!!row.must_change_password,createdAt:row.created_at,passwordChangedAt:row.password_changed_at,
+      }));
+  }
+
+  function setUserActive(id, active, actor, reason){
+    requireRole(actor, 'owner'); reason = clean(reason,500);
+    if (reason.length < 5) fail(400, 'reason_required', 'A reason is required for an account access change.');
+    if (id === actor.id && !active) fail(409, 'self_deactivation', 'You cannot deactivate your own account.');
+    return tx(() => {
+      const row = db.prepare('SELECT id,email,name,role,active,must_change_password FROM users WHERE id=?').get(id);
+      if (!row) fail(404, 'not_found', 'Staff account not found.');
+      if (!active && row.role === 'owner'){
+        const owners = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role='owner' AND active=1").get().n;
+        if (owners <= 1) fail(409, 'last_owner', 'The last active owner cannot be deactivated.');
+      }
+      db.prepare('UPDATE users SET active=? WHERE id=?').run(active ? 1 : 0,id);
+      if (!active) db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
+      const before = { ...row,active:!!row.active,mustChangePassword:!!row.must_change_password };
+      const after = { ...before,active:!!active };
+      audit(actor, active ? 'user.activated' : 'user.deactivated', 'user', id, before, after, reason);
+      return after;
+    });
+  }
+
+  function revokeUserSessions(id, actor, reason){
+    requireRole(actor, 'owner'); reason = clean(reason,500);
+    if (reason.length < 5) fail(400, 'reason_required', 'A reason is required to revoke sessions.');
+    const user = db.prepare('SELECT id,email,name,role FROM users WHERE id=?').get(id);
+    if (!user) fail(404, 'not_found', 'Staff account not found.');
+    const result = db.prepare('DELETE FROM sessions WHERE user_id=? AND id<>?').run(id, id === actor.id ? actor.session_id || '' : '');
+    audit(actor, 'user.sessions.revoked', 'user', id, null, { revoked:Number(result.changes || 0) }, reason);
+    return { revoked:Number(result.changes || 0) };
+  }
+
+  function recordAuthEvent(actor, action){ audit(actor, action, 'session', actor.session_id || actor.id, null, { userId:actor.id }); }
+
   function bootstrapFromEnv(env){
     const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
     if (count) return false;
@@ -506,8 +681,8 @@ export function createStore({ filename = 'data/turf.sqlite' } = {}){
   }
 
   return { db, close:() => db.close(), createUser, authenticate, createSession, sessionUser, deleteSession,
-    deleteExpired, createBookings, getBooking, listState, createHold, confirmHold, releaseHold,
-    createBlock, releaseBlock, releaseBooking, setStatus, extendBooking, recordPayment, listAudit,
-    getSettings, updateSettings,
+    deleteExpired, createBookings, getBooking, listState, listAccounts, createHold, confirmHold, releaseHold,
+    createBlock, releaseBlock, releaseBooking, setStatus, extendBooking, recordPayment, recordRefund, listAudit,
+    getSettings, updateSettings, changePassword, listUsers, setUserActive, revokeUserSessions, recordAuthEvent,
     bootstrapFromEnv, requireRole };
 }

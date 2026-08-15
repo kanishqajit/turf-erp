@@ -1,5 +1,5 @@
 import { PITCHES } from '../constants.js';
-import { durTxt, isoDate, nowMin, rng12, t12, TODAY } from '../datetime.js';
+import { clock12, durTxt, isoDate, nowMin, rng12, t12, TODAY } from '../datetime.js';
 import { collectTotal, esc, money, sessionsToday } from '../domain.js';
 import { S } from '../state.js';
 
@@ -17,11 +17,13 @@ export function buildAlerts(){
     const outstanding = Math.max(0,session.amount - (session.discount || 0) - (session.collected || 0));
     if (session.status === 'upcoming'){
       const late = now - session.start;
-      game.push({kind:'game',at:session.start,urgent:late>5,tag:late>5?'Not started':'Starts soon',
+      const elapsed=now>=session.end;
+      game.push({kind:'game',at:session.start,urgent:late>5,tag:elapsed?'Unresolved':late>5?'Not started':'Starts soon',
         title:session.team+' · '+pitch.name,
-        body:late>5 ? 'Slot began '+Math.round(late)+' min ago and the timer is not running.'
+        body:elapsed ? 'The booked slot ended '+durTxt(now-session.end)+' ago without a final status.'
+          :late>5 ? 'Slot began '+Math.round(late)+' min ago and the timer is not running.'
           : 'Booked '+rng12(session.start,session.end)+'. Start the timer when they take the pitch.',
-        action:'Start timer',act:'alert-timer',id:session.id});
+        action:elapsed?'Resolve':'Start timer',act:elapsed?'alert-resolve':'alert-timer',id:session.id});
     }
     if (session.status === 'running' && now > session.end){
       game.push({kind:'game',at:session.end,urgent:true,tag:'Overtime',title:session.team+' · '+pitch.name,
@@ -39,7 +41,7 @@ export function buildAlerts(){
   const today = isoDate(TODAY);
   const other = S.holds.filter(hold=>hold.date===today).map(hold=>({kind:'other',at:hold.start,tag:'Active hold',
     title:hold.team+' · '+PITCHES[hold.pitch].name,
-    body:'Expires '+new Date(hold.expiresAt).toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'})+'.'}))
+    body:'Expires '+clock12(hold.expiresAt)+'.'}))
     .concat(S.blocks.filter(block=>block.date===today).map(block=>({kind:'other',at:block.start,tag:'Maintenance',
       title:PITCHES[block.pitch].name+' · '+rng12(block.start,block.end),body:block.reason+' · logged by '+block.createdBy})));
   return {game,cash,other};

@@ -34,15 +34,23 @@ export function viewSettings(){
     <span class="avatar">${esc(staffInitials())}</span><div><b>${esc(S.user.name)}</b><span>${esc(S.user.email)} · ${esc(S.user.role)}</span></div></div>
     <p class="settings-note">Operators can manage bookings and payments. Managers can also release bookings,
     block maintenance, approve discounts, and inspect the audit log. Owners can create staff accounts.</p></section>
-    ${can('owner')?`<section class="setcard"><div class="chart-head"><h2 class="h3">Create staff account</h2><span class="note">Owner only</span></div>
+    ${can('owner')?`<section class="setcard"><div class="chart-head"><h2 class="h3">Staff access</h2><span class="note">Owner only</span></div>
+    <div class="staff-list">${S.users.map(user=>`<div class="staff-row"><span class="avatar">${esc(user.name.split(/\s+/).map(part=>part[0]).slice(0,2).join('').toUpperCase())}</span>
+      <div><b>${esc(user.name)}</b><span>${esc(user.email)} · ${esc(user.role)} · ${user.active?'active':'deactivated'}${user.mustChangePassword?' · temporary password':''}</span></div>
+      <div class="acct-actions">${user.id!==S.user.id?`<button class="mini" data-act="staff-${user.active?'deactivate':'activate'}" data-id="${user.id}">${user.active?'Deactivate':'Activate'}</button>`:''}
+      ${user.active?`<button class="mini" data-act="staff-revoke" data-id="${user.id}">Revoke sessions</button>`:''}</div></div>`).join('')}</div></section>
+    <section class="setcard"><div class="chart-head"><h2 class="h3">Create staff account</h2><span class="note">Temporary password requires change at first sign-in</span></div>
     <div class="user-form"><label><span class="dlabel">Name</span><input class="dinput" autocomplete="off" data-act="new-user" data-k="newName" value="${esc(S.newName)}"></label>
     <label><span class="dlabel">Email</span><input class="dinput" type="email" autocomplete="off" data-act="new-user" data-k="newEmail" value="${esc(S.newEmail)}"></label>
     <label><span class="dlabel">Temporary password · min 12 characters</span><input class="dinput" type="password" autocomplete="new-password" data-act="new-user" data-k="newPassword" value="${esc(S.newPassword)}"></label>
     <label><span class="dlabel">Role</span><select class="dinput" data-act="new-role">${['operator','manager','owner'].map(role=>`<option${S.newRole===role?' selected':''}>${role}</option>`).join('')}</select></label></div>
+    ${S.newRole==='owner'?'<p class="settings-note warning">Owners can create and disable staff, revoke sessions, approve large discounts, and inspect every audit record. Grant this role sparingly.</p>':''}
     <button class="dbtn primary" data-act="create-user"${newUserReady?'':' disabled'}>Create account</button></section>`:''}
     ${can('manager')?`<section class="setcard audit-card"><div class="chart-head"><h2 class="h3">Operational audit log</h2>
-    <span class="note">Latest ${S.audit.length} events</span></div><div class="audit-list">${S.audit.length?S.audit.map(event=>`<div class="audit-row">
+    <span class="note">Latest ${S.audit.length} events · up to 200</span></div>${S.auditError?`<div class="error-banner" role="alert">Audit log unavailable: ${esc(S.auditError)}</div>`:''}<div class="audit-list">${S.audit.length?S.audit.map(event=>`<details class="audit-row">
+    <summary>
     <time>${new Date(event.createdAt).toLocaleString('en-IN')}</time><div><b>${esc(event.action.replaceAll('.',' · '))}</b>
-    <span>${esc(event.actor.name)}${event.reason?' · '+esc(event.reason):''}</span></div><code>${esc(event.entityType)} ${esc(event.entityId.slice(0,8))}</code></div>`).join(''):
+    <span>${esc(event.actor.name)}${event.reason?' · '+esc(event.reason):''}</span></div><code>${esc(event.entityType)} ${esc(event.entityId.slice(0,8))}</code></summary>
+    <div class="audit-detail"><div><b>Before</b><pre>${esc(JSON.stringify(event.before,null,2)||'—')}</pre></div><div><b>After</b><pre>${esc(JSON.stringify(event.after,null,2)||'—')}</pre></div></div></details>`).join(''):
     '<div class="alert-none">No operational changes recorded yet.</div>'}</div></section>`:''}</main>`;
 }

@@ -11,8 +11,9 @@ state without an authenticated API session.
 
 ## What is implemented
 
-- Password authentication with `HttpOnly`, `SameSite=Strict` sessions, CSRF
-  protection, origin checks, login throttling, and 12-hour session expiry.
+- Password authentication with forced first-login password changes, `HttpOnly`,
+  `SameSite=Strict` sessions, CSRF protection, origin checks, login throttling,
+  12-hour absolute expiry, and a configurable 30-minute idle timeout.
 - Operator, manager, and owner roles. Managers control destructive releases,
   maintenance, status reversals, and discounts; owners can create staff accounts.
 - One persisted booking ledger shared by Availability, Sessions, Reminders, and
@@ -21,8 +22,9 @@ state without an authenticated API session.
   holds, and maintenance blocks. Batch/group reservations succeed completely or
   not at all.
 - Collision- and closing-time-safe session extensions with price recalculation.
-- Append-only payment events. The original booking price is preserved, extensions
-  update the total, and discounts require a reason plus manager/owner authority.
+- Idempotent, append-only payment events with non-cash references and rail-aware
+  refunds. The original booking price is preserved, extensions update the total,
+  and discounts require a reason plus manager/owner authority.
 - A server-persisted default deposit is configurable by managers and owners,
   shared across consoles, prefilled for advance collection, and audit logged.
 - Server-authored operational audit events, visible to managers in Settings.
@@ -44,6 +46,8 @@ Open `http://127.0.0.1:5174`. The bootstrap account is created only when the
 database has no users. Subsequent staff accounts are created by an owner under
 Settings. The database defaults to `data/turf.sqlite`; set
 `TURF_DATABASE_PATH` to place it on a persistent volume.
+Set `TURF_TIME_ZONE` to the venue's IANA time zone (default `Asia/Kolkata`) and
+`TURF_SESSION_IDLE_MINUTES` to 5–720 minutes (default 30).
 
 For development with automatic restart:
 
@@ -77,7 +81,19 @@ npm run check
 
 The regression suite covers custom-booking conflicts, atomic group reservations,
 hold expiry, extension collisions and closing time, authorization and audit
-requirements, and append-only payments/discount approval.
+requirements, first-login password changes, staff deactivation, stale-write
+rejection, and idempotent rail-aware payments/refunds.
+
+Create a transactionally consistent local SQLite backup (14 copies retained by
+default) with:
+
+```bash
+npm run backup
+```
+
+Set `TURF_BACKUP_DIR` to a mounted backup destination and
+`TURF_BACKUP_RETENTION` to 1–365. A local script is not an off-host backup by
+itself; replicate that directory to encrypted remote storage and test restores.
 
 ## Architecture
 
@@ -121,8 +137,8 @@ Before serving real customers:
    retention/export policy for customer and audit data.
 5. Move to managed PostgreSQL before multiple application replicas or venues;
    SQLite is intentionally a single-writer, single-deployment foundation.
-6. Add password reset/invitation delivery, optional MFA/SSO, account deactivation,
-   payment-gateway reconciliation, search/rescheduling, and automated browser tests.
+6. Add password reset/invitation delivery, MFA/SSO, payment-gateway reconciliation,
+   rescheduling, and automated browser tests in the deployment pipeline.
 
 ## Product behavior
 
@@ -139,5 +155,10 @@ alerts from current persisted data.
 **Dashboard** reports confirmed booked minutes and collected revenue across all
 pitches. Holds and maintenance are not counted as bookings or revenue.
 
+**Accounts** is a searchable 12-month ledger for collections, event history,
+exports, and manager-approved rail-aware refunds. Booking release stays blocked
+until recorded collections are cleared there.
+
 **Settings** contains local appearance preferences, the signed-in role, owner-only
-staff creation, and the manager-visible operational audit log.
+staff creation/deactivation/session revocation, and an expandable manager-visible
+operational audit log.

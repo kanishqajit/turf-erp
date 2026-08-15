@@ -96,19 +96,18 @@ export function bookingWindowAt(week, di, pitch, start, duration){
   if (hold) return { ok:false, reason:`Overlaps an active hold at ${rng12(hold.start, hold.end)}.` };
   const block = S.blocks.find(record => overlaps(record, date, pitch, start, end));
   if (block) return { ok:false, reason:`Overlaps maintenance at ${rng12(block.start, block.end)}.` };
-  for (let hour = Math.floor(start / 60); hour < Math.ceil(end / 60); hour++){
-    const state = statusFor(di, hour - START_HOUR, pitch, week);
-    if (state !== 'free'){
-      const conflict = state === 'booked' ? 'another booking' : state === 'hold' ? 'a held slot' : 'maintenance';
-      return { ok:false, reason:`${hourRng12(hour)} overlaps ${conflict}.` };
-    }
-  }
   return { ok:true, reason:'Available for the full booking.' };
 }
 export const bookingWindow = (di, pitch, start, duration) => bookingWindowAt(S.weekOffset, di, pitch, start, duration);
 
 export const sessionsToday = () => S.bookings.filter(record => record.date === isoDate(TODAY));
-export const sessionById = id => sessionsToday().find(session => session.id === id);
+export const bookingById = id => S.bookings.find(booking => booking.id === id);
+export const sessionById = id => bookingById(id) || S.accounts.find(booking => booking.id === id);
+export const validContact = value => {
+  const text = String(value || '').trim();
+  const digits = text.replace(/\D/g, '');
+  return digits.length >= 8 && digits.length <= 15 && /^[+\d][\d\s().-]*$/.test(text);
+};
 export const outstandingFor = session => Math.max(0, session.amount - (session.discount || 0) - (session.collected || 0));
 export const collectTotal = () => sessionsToday().filter(session => session.pay !== 'Payment done' && session.status !== 'noshow')
   .reduce((total, session) => total + outstandingFor(session), 0);
