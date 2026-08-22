@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createStore, ProductError } from '../server/store.mjs';
+import { CLOSE_MIN, createStore, ProductError } from '../server/store.mjs';
 
 const ownerInput = {
   email:'owner@example.test',
@@ -45,15 +45,17 @@ test('accounts, sessions, and operational records survive a process restart', ()
     store.close();
 
     store = createStore({ filename });
-    assert.equal(statSync(dir).mode & 0o777,0o700);
-    assert.equal(statSync(filename).mode & 0o777,0o600);
+    if (process.platform !== 'win32'){
+      assert.equal(statSync(dir).mode & 0o777,0o700);
+      assert.equal(statSync(filename).mode & 0o777,0o600);
+    }
     const authenticated = store.authenticate(ownerInput.email, ownerInput.password);
     const session = store.createSession(authenticated);
     assert.equal(store.sessionUser(session.token).role, 'owner');
     assert.equal(store.listState('2026-08-13', '2026-08-13').bookings[0].team, 'Persistent Team');
     assert.equal(store.getSettings().depositAmount, 750);
     store.close();
-  } finally { rmSync(dir, { recursive:true, force:true }); }
+  } finally { rmSync(dir, { recursive:true, force:true, maxRetries:5, retryDelay:50 }); }
 });
 
 test('sessions expire after the configured idle window', () => {
@@ -156,8 +158,10 @@ test('extensions cannot cross a booking or closing time and recalculate the actu
     }], operator);
     expectCode('booking_conflict', () => store.extendBooking(first.id, 60, operator));
 
+    /* Anchored to the closing time rather than a literal, so moving opening
+       hours cannot silently turn this into a test that asserts nothing. */
     const [late] = store.createBookings([{
-      date:'2026-08-18', pitch:2, start:1260, end:1320,
+      date:'2026-08-18', pitch:2, start:CLOSE_MIN - 60, end:CLOSE_MIN,
       team:'Late', contact:'+91 90000 00008',
     }], operator);
     expectCode('outside_hours', () => store.extendBooking(late.id, 30, operator));
@@ -267,5 +271,126 @@ test('staff accounts require a first-login password change and owners can revoke
     store.setUserActive(staff.id,false,owner,'Staff member left venue');
     expectCode('invalid_credentials',()=>store.authenticate('new@example.test','private replacement 456'));
     expectCode('self_deactivation',()=>store.setUserActive(owner.id,false,owner,'Accidental self removal'));
+  } finally { store.close(); }
+});
+
+/* The client quotes prices before the server bills them — two implementations
+   of one rule, in different tiers, that must agree. Nothing can import across
+   that boundary, so this pins the server side: if the rate or the floodlight
+   fee moves here, this fails and whoever changed it has to move the matching
+   constants in client/domain.js. */
+test('pricing is pro rata with a flat floodlight fee after 6pm', () => {
+  const { store, operator } = fixture();
+  try {
+    const quote = (pitch, start, end, team) => store.createBookings([{
+      date:'2026-08-21', pitch, start, end, team, contact:'+91 90000 00010',
+    }], operator)[0].amount;
+
+    /* Pitch A is 1800/hour: a full hour, a half hour pro rata, both before 6pm. */
+    assert.equal(quote(0, 600, 660, 'Hour'), 1800);
+    assert.equal(quote(0, 720, 750, 'Half'), 900);
+    /* Ending exactly at 6pm is still daylight — the fee starts strictly after. */
+    assert.equal(quote(0, 1020, 1080, 'Dusk'), 1800);
+    /* One minute past and the flat 300 applies once, not per hour. */
+    assert.equal(quote(1, 1080, 1140, 'Lit'), 1200 + 300);
+    /* A different pitch, because the same one would collide with 'Lit'. */
+    assert.equal(quote(2, 1080, 1200, 'LitLong'), 6400 + 300);
+  } finally { store.close(); }
+});
+
+/* The console quotes from client/constants.js and the server bills from its own
+   PITCHES list. Nothing keeps the two in step, and a drift is invisible: the
+   operator reads one price off the screen while the customer is charged
+   another. Cheaper to fail here than to find it in a till reconciliation. */
+test('client and server agree on pitch names and rates', async () => {
+  const { PITCHES:server } = await import('../server/store.mjs');
+  const { PITCHES:client } = await import('../client/constants.js');
+  assert.equal(client.length, server.length, 'pitch count differs between tiers');
+  client.forEach((pitch, index) => {
+    assert.equal(pitch.name, server[index].name, `pitch ${index} name differs`);
+    assert.equal(pitch.rate, server[index].rate, `pitch ${index} rate differs`);
+  });
+});
+
+/* ── stating when play began ──
+   The counter says when a team walked on; that is not the same claim as
+   correcting a session's time after the fact, and it must not need a manager
+   standing over the operator to record it. Everything about the rule is keyed
+   to "today" and "now" in the venue's zone, so the test picks a fixed-offset
+   zone that puts the store's local clock near midday. That keeps the booking
+   inside opening hours and the assertions deterministic whatever hour the
+   suite is actually run at. */
+function middayFixture(){
+  const now = new Date();
+  const utcMinute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  let offset = Math.round((12 * 60 - utcMinute) / 60);
+  if (offset > 12) offset -= 24;
+  if (offset < -11) offset += 24;
+  /* POSIX inverts the sign inside these zone names: Etc/GMT-5 is UTC+5. */
+  const timeZone = offset === 0 ? 'UTC' : offset > 0 ? `Etc/GMT-${offset}` : `Etc/GMT+${-offset}`;
+  const store = createStore({ filename:':memory:', timeZone });
+  const owner = store.createUser(ownerInput);
+  const operator = store.createUser({
+    email:'operator@example.test', name:'Test Operator', role:'operator',
+    password:'another correct horse battery',
+  }, owner);
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', hourCycle:'h23' })
+    .formatToParts(new Date()).reduce((all, part) => (all[part.type] = part.value, all), {});
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  const minute = Number(parts.hour) * 60 + Number(parts.minute);
+  return { store, owner, operator, date, minute };
+}
+
+test('an operator may state the minute a session began, inside its own window', () => {
+  const { store, owner, operator, date, minute } = middayFixture();
+  try {
+    const [booking] = store.createBookings([{
+      date, pitch:0, start:minute - 20, end:minute + 40,
+      team:'Late Arrivals', contact:'+91 90000 00030',
+    }], operator);
+
+    /* No manager, no reason: the operator says play began ten minutes ago. */
+    const running = store.setStatus(booking.id, 'running', operator, '', minute - 10, booking.version);
+    assert.equal(running.status, 'running');
+    assert.equal(running.startedAt, minute - 10);
+
+    /* The window is the only bound: a minute the server clock has not reached
+       yet is still an ordinary start, because the counter's clock and the
+       venue timezone's need not agree to the minute and a booking that has
+       not ended cannot be corrected by knowing which of them is right. */
+    const ahead = store.setStatus(booking.id, 'upcoming', owner, 'resetting for the skew case', null, running.version);
+    const later = store.setStatus(booking.id, 'running', operator, '', minute + 5, ahead.version);
+    assert.equal(later.startedAt, minute + 5);
+
+    /* And it is on the record as an ordinary status change. */
+    const actions = store.listAudit(20, owner).map(event => event.action);
+    assert.ok(actions.includes('booking.status.running'));
+  } finally { store.close(); }
+});
+
+test('a stated start outside the booking window is still a manager correction', () => {
+  const { store, operator, date, minute } = middayFixture();
+  try {
+    const [booking] = store.createBookings([{
+      date, pitch:1, start:minute - 20, end:minute + 40,
+      team:'Early Birds', contact:'+91 90000 00031',
+    }], operator);
+
+    /* More than a quarter hour before the booked start. */
+    expectCode('session_too_early', () =>
+      store.setStatus(booking.id, 'running', operator, '', minute - 40, booking.version));
+    /* At or past the booked end there is no session left to start. */
+    expectCode('session_elapsed', () =>
+      store.setStatus(booking.id, 'running', operator, '', minute + 40, booking.version));
+    /* Another day is a correction whatever the minute says, and needs the role. */
+    const [yesterday] = store.createBookings([{
+      date:'2026-01-05', pitch:2, start:minute - 20, end:minute + 40,
+      team:'Last Week', contact:'+91 90000 00032',
+    }], operator);
+    expectCode('forbidden', () =>
+      store.setStatus(yesterday.id, 'running', operator, '', minute, yesterday.version));
+    /* Untouched by either refusal. */
+    assert.equal(store.listState(date, date).bookings.find(row => row.id === booking.id).status, 'upcoming');
   } finally { store.close(); }
 });

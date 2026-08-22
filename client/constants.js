@@ -22,7 +22,7 @@ export const PITCH_PALETTE = [
 ];
 export const PITCH_DEFAULT_HEX = ['#006B3C', '#C8102E', '#69359C'];
 export const NEUTRAL_TINT = {
-  bg:'#FFFFFF', line:'#EAECE4', fg:'#16181C', soft:'#8E949B', chip:'#F4F5F0', chipFg:'#16181C',
+  bg:'var(--paper)', line:'var(--edge)', fg:'var(--ink)', soft:'var(--muted)', chip:'var(--soft)', chipFg:'var(--ink)',
 };
 
 export const MATCH_STATES = [

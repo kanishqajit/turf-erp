@@ -28,7 +28,8 @@ export function buildSessions(){
         .concat(unpaid && s.status !== 'noshow' ? [{label:'Collect money',primary:duePay,act:'collect'}] : []);
       return {
         raw:s, id:s.id, pitchIndex:s.pitch, team:s.team, contact:s.contact,
-        pitchName:pitch.name + ' · ' + pitch.sub, range:rng12(s.start,s.end), status:s.status,
+        pitchName:pitch.name + ' · ' + pitch.sub, pitchShort:pitch.name, pitchSub:pitch.sub,
+        range:rng12(s.start,s.end), status:s.status,
         running, upcoming, done, over, late, elapsedSlot, unpaid, duePay, pct, amount,
         awaitingPay:duePay, focused:S.focusSession === s.id,
         rowCls:over ? 'over' : running ? 'play' : duePay ? 'duepay' : late ? 'over' : upcoming ? 'upcoming' : s.status === 'noshow' ? 'noshow' : 'done',
@@ -43,10 +44,14 @@ export function buildSessions(){
           ? 'Paid ' + money(s.collected || 0) + (s.discount ? ' · ' + money(s.discount) + ' approved discount' : '')
           : s.pay,
         amountSuffix:s.pay === 'Advance paid' || s.pay === 'Payment done' ? '' : ' · ' + money(amount),
+        /* The status pill beside this already names the state, so the clock says
+           only the magnitude. It used to repeat the pill in the card's largest
+           type ("ended 4h 06m ago · unresolved"), which wrapped onto its own
+           line and cost more height than the team name. */
         clock:running ? (over ? '+' + durTxt(-left) + ' over' : durTxt(left) + ' left')
-          : elapsedSlot ? 'ended ' + durTxt(now-s.end) + ' ago · unresolved'
+          : elapsedSlot ? durTxt(now-s.end) + ' ago'
           : late ? durTxt(now-s.start) + ' late'
-          : upcoming ? 'starts in ' + durTxt(s.start - now)
+          : upcoming ? 'in ' + durTxt(s.start - now)
           : done ? 'ended ' + t12(s.endedAt || s.end) : '—',
         elapsedLabel:running ? durTxt(Math.max(0,elapsed)) + ' played · ' : '',
         liveNote:duePay ? 'Match finished · collect payment to clear' : '',
@@ -63,9 +68,15 @@ export const payOptsHtml = (card, dark = false) => `<div class="opts">${PAY_STAT
 function liveCardHtml(card){
   const dark = card.running;
   const cls = 'scard big actioncard' + (card.duePay ? ' duepay' : dark ? ' live' : '') + (card.focused ? ' focus' : '');
-  return `<div class="${cls}"><div class="row"><span class="sstat ${card.statusCls}">${card.statusLabel}</span>
+  /* The pitch is the first thing to establish: the queue mixes all three, and
+     until you know which pitch a card is for none of the rest of it is
+     actionable. It leads the row as a tag in the pitch's own colour, and the
+     card carries that colour as a rail down its edge so a column of cards can
+     be grouped by eye without reading a word. */
+  return `<div class="${cls}" style="${tintVars(tintFor(card.pitchIndex))}"><div class="row">
+    <span class="pitchtag">${esc(card.pitchShort)}</span><span class="sstat ${card.statusCls}">${card.statusLabel}</span>
     <span class="ssrc ${card.sourceCls}">${card.sourceLabel}</span><span class="bigclock">${card.clock}</span></div>
-    <div><b class="team">${esc(card.team)}</b><span class="sub">${esc(card.pitchName)} &middot; ${card.range}</span></div>
+    <div><b class="team">${esc(card.team)}</b><span class="sub">${esc(card.pitchSub)} &middot; ${card.range}</span></div>
     ${card.running ? `<div class="strack"><div class="fill${card.over ? ' over' : ''}" style="width:${card.pct}%"></div></div>` : ''}
     <div class="split"><span class="sub">${card.elapsedLabel}${esc(card.contact)}</span>
       <span class="pay${card.unpaid ? ' due' : ''}">${esc(card.payLabel)}${card.amountSuffix}</span></div>
@@ -80,16 +91,26 @@ function timelineHtml(pitchIndex){
     const running = session.status === 'running';
     const duePay = session.status === 'done' && session.pay !== 'Payment done';
     const over = running && session.end < now;
-    const background = session.status === 'noshow' ? 'var(--edge2)' : over ? 'var(--red)'
-      : duePay ? 'var(--amber-bg)' : session.status === 'done' ? 'var(--edge2)'
-      : running ? 'var(--lime)' : 'var(--paper)';
+    /* Fills come from the strip's own tokens rather than from the card
+       surfaces. A surface is chosen to sit on the page; these have to be
+       legible against the track they sit in, and in the dark theme --paper over
+       --soft is eight levels apart, which turned every not-started block into
+       an empty groove and left the whole strip reading as one colour. */
+    const background = session.status === 'noshow' ? 'var(--tl-void)' : over ? 'var(--red)'
+      : duePay ? 'var(--amber-bg)' : session.status === 'done' ? 'var(--tl-done)'
+      : running ? 'var(--lime)' : 'var(--tl-next)';
     const border = over ? '1px solid var(--red-deep)' : duePay ? '1px solid var(--amber)'
-      : running ? '1.5px solid var(--ink)' : '1px solid var(--edge3)';
+      : running ? '1.5px solid #A9C22E' : session.status === 'noshow' ? '1px solid var(--tl-void-line)'
+      : session.status === 'done' ? '1px solid var(--tl-done-line)' : '1px solid var(--tl-next-line)';
     const width = pos(session.end) - pos(session.start);
     const onDark = over;
     const word = over ? 'OVER' : running ? 'LIVE' : duePay ? 'DUE'
       : session.status === 'done' ? 'DONE' : session.status === 'noshow' ? 'NO-SHOW' : 'NEXT';
-    const color = over ? '#fff' : session.status === 'noshow' ? 'var(--body)' : 'var(--ink)';
+    /* Lime and red are the same hex in both themes, so the text on them is a
+       constant too: --ink follows the theme and would go white on lime. */
+    const color = over ? '#fff' : running ? '#16181C' : duePay ? 'var(--amber-txt)'
+      : session.status === 'noshow' ? 'var(--tl-void-fg)'
+      : session.status === 'done' ? 'var(--tl-done-fg)' : 'var(--tl-next-fg)';
     const title = session.team + ' · ' + rng12(session.start,session.end) + ' · '
       + (session.status === 'done' ? 'finished' : session.status) + ' · ' + session.pay;
     return `<div class="tl-block" title="${esc(title)}" data-act="tl-block" data-id="${session.id}"
@@ -122,9 +143,14 @@ export function viewSessions(){
     ['Next',next ? t12(next.raw.start) : 'None',''],
   ].map(([label,value,cls]) => `<div class="stat${cls}">
       <span class="lbl">${label}</span><b>${value}</b></div>`).join('')}</div>`;
-  const marks = [['NEXT','Not started','var(--ink)','#fff',false],['LIVE','In play','var(--lime)','var(--ink)',false],
-    ['OVER','Overtime','var(--red)','#fff',false],['DUE','Payment due','var(--amber)','var(--ink)',false],
-    ['DONE','Finished','var(--edge2)','var(--ink)',false],['₹','Payment received','var(--green)','#fff',true]].map(([mark,text,background,color,dot]) =>
+  /* Drawn from the tokens the bars use, so the key cannot promise a colour the
+     strip does not show. The three fixed fills carry a fixed text colour with
+     them: --ink follows the theme, and on a lime chip it goes white. */
+  const marks = [['NEXT','Not started','var(--tl-next)','var(--tl-next-fg)',false],
+    ['LIVE','In play','var(--lime)','#16181C',false],
+    ['OVER','Overtime','var(--red)','#fff',false],['DUE','Payment due','var(--amber)','#16181C',false],
+    ['DONE','Finished','var(--tl-done)','var(--tl-done-fg)',false],
+    ['₹','Payment received','var(--green)','#fff',true]].map(([mark,text,background,color,dot]) =>
       `<span><b class="${dot ? 'dot' : ''}" style="background:${background};color:${color}">${mark}</b>${text}</span>`).join('');
   const attention = cards.filter(card => card.running || card.duePay || card.late);
   const actionCards = attention.length ? attention : upcomingAll.slice(0,3);

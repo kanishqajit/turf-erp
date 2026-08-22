@@ -1,10 +1,10 @@
-import { PITCHES, START_HOUR } from './constants.js';
+import { END_HOUR, PITCHES, START_HOUR } from './constants.js';
 import { dateForAddress, dayOffsetOf, hourRng12, hours, nowMin, rng12, toMin } from './datetime.js';
-import { blockAtTime, bookingAtTime, bookingById, bookingWindow, goToDayOffset, holdAtTime, sessionById, statusAtTime, validContact } from './domain.js';
+import { blockAtTime, bookingAtTime, bookingById, bookingWindow, clampTimerAt, goToDayOffset, holdAtTime, sessionById, statusAtTime, validContact } from './domain.js';
 import { apiRequest, loadState, mutate, refreshOperationalState } from './api.js';
-import { blankForm, can, S, savePrefs } from './state.js';
+import { applyTheme, blankForm, can, S, savePrefs } from './state.js';
 import { dateAddress, groupValid } from './views/availability.js';
-import { render } from './render.js';
+import { captureBoard, render } from './render.js';
 
 const confirmValid=()=>S.form.team.trim().length>0&&validContact(S.form.contact);
 const blockReady=()=>S.blockReason.trim().length>=15;
@@ -20,12 +20,28 @@ function select(dayIndex,hourIndex,pitchIndex,startOffset=0){
 const selectedStart = () => hours()[S.sel.hi] * 60 + S.startOffset;
 
 function setMatch(session,status){
-  if(status==='running'&&session.status!=='running'){S.timerAsk=session.id;return;}
+  if(status==='running'&&session.status!=='running'){askTimer(session.id);return;}
   if(status==='done'&&session.status!=='done'){S.doneAsk=session.id;return;}
   if(status===session.status)return;
   S.actionAsk={kind:'status',id:session.id,target:status,title:status==='noshow'?'Mark no-show':'Change session status',
     subject:`${session.team} · ${rng12(session.start,session.end)} · ${session.status} → ${status}`};
   S.actionReason='';
+}
+
+/* ── starting the clock ──
+   The timer's origin is a decision, not a side effect of the button being
+   pressed: a team that walked on at 7:07 for a 7:00 slot can be given the
+   clock from either minute, and the staff know which one happened. The dialog
+   collects it, so every entry point opens the dialog rather than starting the
+   session outright. The chosen minute is what the server records as the
+   session's start, so it has to stay inside the booking's own window — a
+   quarter hour of grace before the booked start, and never later than now,
+   because a clock cannot begin in the future. */
+function askTimer(id){
+  const session=sessionById(id);
+  if(!session)return;
+  S.timerAsk=id;
+  S.timerAt=clampTimerAt(session,nowMin());
 }
 
 function pickPay(session,status){
@@ -37,13 +53,39 @@ function pickPay(session,status){
   S.advVal=status==='Payment done'?String(outstanding):deposit>0?String(deposit):'';S.advReason='';S.advPayMode='Cash';S.advReference='';
 }
 
+/* A split tender is not a new kind of payment — the ledger is append-only, so
+   half in cash and half by UPI is two entries, exactly as if they had been taken
+   one after the other. Posting them separately is also what keeps the per-mode
+   totals right, which is what the till has to reconcile against and what caps a
+   later refund to the mode it was taken in.
+
+   They go one at a time rather than together: the second carries the version the
+   first returned, so a stale-version rejection can still stop the pair halfway
+   rather than silently double-posting. */
 async function saveAdvance(){
-  const session=sessionById(S.advAsk),amount=Math.max(0,parseInt(S.advVal,10)||0);
-  if(!session||amount<=0)return;
-  const result=await mutate(`/api/bookings/${encodeURIComponent(session.id)}/payments`,{
-    amount,mode:S.advPayMode,settle:S.advMode==='settle',reason:S.advReason,reference:S.advReference,
-    idempotencyKey:pendingKey('payment',session.id),version:session.version});
-  if(result){clearPendingKey('payment',session.id);S.advAsk=null;S.advVal='';S.advReason='';S.advReference='';}
+  const session=sessionById(S.advAsk);
+  if(!session)return;
+  const split=S.advPayMode==='Split';
+  const legs=split
+    ? [{mode:'Cash',amount:Math.max(0,parseInt(S.advCash,10)||0),reference:''},
+       {mode:'UPI', amount:Math.max(0,parseInt(S.advUpi,10)||0), reference:S.advReference}]
+        .filter(leg=>leg.amount>0)
+    : [{mode:S.advPayMode,amount:Math.max(0,parseInt(S.advVal,10)||0),reference:S.advReference}];
+  if(!legs.length||legs.some(leg=>leg.amount<=0))return;
+  let version=session.version,ok=true;
+  for(let index=0;index<legs.length&&ok;index++){
+    const leg=legs[index];
+    /* Only the last leg may settle: settling on the first would discount the
+       balance the second is about to pay. */
+    const result=await mutate(`/api/bookings/${encodeURIComponent(session.id)}/payments`,{
+      amount:leg.amount,mode:leg.mode,settle:S.advMode==='settle'&&index===legs.length-1,
+      reason:S.advReason,reference:leg.reference,
+      idempotencyKey:pendingKey('payment',session.id)+(split?'-'+leg.mode.toLowerCase():''),
+      version});
+    if(result)version=result.booking?result.booking.version:version; else ok=false;
+  }
+  if(ok){clearPendingKey('payment',session.id);S.advAsk=null;S.advVal='';S.advReason='';
+    S.advReference='';S.advCash='';S.advUpi='';}
 }
 
 async function saveRefund(){
@@ -147,7 +189,49 @@ async function handleClick(event){
     case 'set-pitch-color':S.pitchColors[+target.dataset.pi]=value;S.colorPickerOpen=null;savePrefs();break;
     case 'pitch':S.pitch=+value;S.sel=null;break;
     case 'week':S.weekOffset+=+value;S.sel=null;await refreshOperationalState();break;
-    case 'avail-mode':S.availMode=value;S.sel=null;break;
+    case 'avail-mode':S.availMode=value;S.sel=null;savePrefs();break;
+    /* Two buttons drive this, so it sets from the value it is given and only
+       falls back to a flip when something calls it without one. */
+    case 'avail-dense':{const next=value?value==='compact':!S.dense;
+      if(next!==S.dense)captureBoard();
+      S.dense=next;savePrefs();break;}
+    /* The theme is a property of the page, not of any view, so it is written to
+       the document root rather than threaded through the render. */
+    case 'toggle-theme':S.theme=S.theme==='dark'?'light':'dark';applyTheme();savePrefs();break;
+    case 'check-in':S.checkedIn[id]=Date.now();savePrefs();break;
+    case 'undo-check-in':delete S.checkedIn[id];savePrefs();break;
+    /* Starting from the board is the same transition the Sessions rail makes,
+       so it goes through the same endpoint and the same version check. */
+    case 'start-on-board':askTimer(id);break;
+    /* Ending and stopping both go through the dialogs the Sessions rail already
+       uses, so a confirmation from the board is the same confirmation — and a
+       stop is a status reversal, which the server requires a reason and a
+       manager for. There is no pause in the model: stopping returns the session
+       to upcoming, and starting it again is how it resumes. */
+    case 'end-game':S.doneAsk=id;break;
+    case 'stop-timer':{const session=sessionById(id);if(!session)break;
+      S.actionAsk={kind:'status',id:session.id,target:'upcoming',title:'Stop the timer',
+        subject:`${session.team} · ${rng12(session.start,session.end)} · running → upcoming`};
+      S.actionReason='';break;}
+    case 'reopen-on-board':{const session=sessionById(id);if(!session)break;
+      S.actionAsk={kind:'status',id:session.id,target:'upcoming',title:'Reopen session',
+        subject:`${session.team} · ${rng12(session.start,session.end)} · done → upcoming`};
+      S.actionReason='';break;}
+    case 'collect-on-board':{const session=sessionById(id);if(session)pickPay(session,'Payment done');break;}
+    /* Editing a payment is not the same as refunding one. A refund sends money
+       back to a customer; a card that was marked paid in error needs the entry
+       undone, and the operator should not have to call that a refund to get at
+       it. So this opens the payment sheet, which shows what was actually taken
+       and can correct it — the ledger stays append-only either way, because a
+       correction is still a reversing entry, but the language matches what
+       happened. */
+    case 'edit-payment':{const session=sessionById(id);if(!session)break;
+      /* Open on a tender that actually holds money: defaulting to Cash offered
+         to reverse a mode with nothing in it, so the amount capped at zero and
+         the sheet could not be saved. */
+      const held=['Cash','UPI','Card'].find(mode=>(session.collectedByMode&&session.collectedByMode[mode]||0)>0);
+      S.advAsk=session.id;S.advMode='settle';S.advPayMode=held||'Cash';
+      S.advVal='';S.advCash='';S.advUpi='';S.advReason='';S.advReference='';break;}
     case 'sessions-mode':S.sessionsMode=value;S.focusSession=null;break;
     case 'toggle-band':if(S.collapsedBands[value])delete S.collapsedBands[value];else S.collapsedBands[value]=true;savePrefs();break;
     case 'day-focus':S.dayIndex=+value;S.availMode='day';S.sel=null;break;
@@ -168,6 +252,16 @@ async function handleClick(event){
       title:'Release confirmed booking',subject:`${booking.team} · ${rng12(booking.start,booking.end)}`};S.actionReason='';}break;}
     case 'booking-account':S.view='accounts';S.accountFocus=id;S.sel=null;break;
     case 'start-offset':S.startOffset=+value;S.blockOpen=false;break;
+    /* Sliding the window, not stretching it: the duration is set in the box
+       below and is left exactly as it was, so only where the booking sits
+       changes. The whole window is re-checked at its new position rather than
+       just the half hour it moved into — it has to clear everything it now
+       covers, and what it vacates is irrelevant. */
+    case 'sel-shift':{const delta=value==='back'?-30:30;
+      const start=hours()[S.sel.hi]*60+S.startOffset+delta;
+      if(start<START_HOUR*60||start+S.dur>END_HOUR*60)return;
+      if(!bookingWindow(S.sel.di,S.pitch,start,S.dur).ok)return;
+      S.startOffset+=delta;S.blockOpen=false;break;}
     case 'dur':{const next=Math.min(240,Math.max(30,S.dur+(+value)));if(+value>0){const hour=hours()[S.sel.hi];
       if(!bookingWindow(S.sel.di,S.pitch,hour*60+S.startOffset,next).ok)return;}S.dur=next;S.blockOpen=false;break;}
     case 'form-pay':S.form.pay=value;break;
@@ -206,22 +300,46 @@ async function handleClick(event){
     case 'pay':pickPay(session,value);break;
     case 'ask-done':S.doneAsk=id;break;
     case 'plus30':await mutate(`/api/bookings/${encodeURIComponent(id)}/extend`,{minutes:30,version:session?.version});break;
-    case 'mark-started':S.timerAsk=id;break;
+    case 'mark-started':askTimer(id);break;
     case 'noshow':setMatch(session,'noshow');break;
     case 'undo-noshow':setMatch(session,'upcoming');break;
     case 'collect':pickPay(session,'Payment done');break;
-    case 'timer-cancel':S.timerAsk=null;break;
-    case 'timer-start':{const current=sessionById(S.timerAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
-      {status:'running',version:current.version});if(result)S.timerAsk=null;break;}
+    case 'timer-cancel':S.timerAsk=null;S.timerAt=null;break;
+    /* Two presets and a minute nudge, all writing the same field: the dialog
+       has one answer to give, and the presets are just the two minutes worth
+       naming. */
+    case 'timer-mode':{const current=sessionById(S.timerAsk);if(!current)break;
+      S.timerAt=clampTimerAt(current,value==='booked'?current.start:nowMin());break;}
+    case 'timer-nudge':{const current=sessionById(S.timerAsk);if(!current)break;
+      S.timerAt=clampTimerAt(current,S.timerAt+(+value));break;}
+    case 'timer-start':{const current=sessionById(S.timerAsk);if(!current)break;
+      const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
+        {status:'running',version:current.version,atMinute:clampTimerAt(current,S.timerAt)});
+      if(result){S.timerAsk=null;S.timerAt=null;}break;}
     case 'done-cancel':S.doneAsk=null;break;
     case 'done-confirm':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
       {status:'done',version:current.version});if(result)S.doneAsk=null;break;}
     case 'done-collect':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
       {status:'done',version:current.version});if(result){S.doneAsk=null;pickPay(sessionById(current.id),'Payment done');}break;}
-    case 'adv-cancel':if(S.advAsk)clearPendingKey('payment',S.advAsk);S.advAsk=null;S.advVal='';S.advReason='';S.advReference='';break;
+    case 'adv-cancel':if(S.advAsk)clearPendingKey('payment',S.advAsk);S.advAsk=null;S.advVal='';S.advReason='';S.advReference='';S.advCash='';S.advUpi='';break;
     case 'adv-quick':S.advVal=value;break;
-    case 'adv-mode':S.advPayMode=value;S.advReference='';break;
+    case 'adv-mode':{const wasSplit=S.advPayMode==='Split';S.advPayMode=value;S.advReference='';
+      if(value==='Split'&&!wasSplit){S.advCash=S.advVal||'';S.advUpi='';}
+      if(value!=='Split'&&wasSplit){S.advVal=String((parseInt(S.advCash,10)||0)+(parseInt(S.advUpi,10)||0)||'');}
+      break;}
     case 'adv-save':await saveAdvance();break;
+    /* The reversing entry. Same endpoint a refund uses, because in the ledger it
+       is the same thing — what differs is why, and the reason states that. */
+    case 'adv-correct':{const session=sessionById(S.advAsk);
+      const amount=Math.max(0,parseInt(S.advVal,10)||0);
+      if(!session||amount<=0||!can('manager')||S.advReason.trim().length<5)break;
+      const result=await mutate(`/api/bookings/${encodeURIComponent(session.id)}/refunds`,{
+        amount,mode:S.advPayMode,reason:'Correction: '+S.advReason.trim(),
+        reference:S.advReference,idempotencyKey:pendingKey('refund',session.id),
+        version:session.version});
+      if(result){clearPendingKey('refund',session.id);S.advAsk=null;S.advVal='';
+        S.advReason='';S.advReference='';}
+      break;}
     case 'account-clear-focus':S.accountFocus=null;break;
     case 'account-history':S.accountHistory=S.accountHistory===id?null:id;break;
     case 'account-status':S.accountStatus=value;break;
@@ -236,7 +354,7 @@ async function handleClick(event){
     case 'refund-save':await saveRefund();break;
     case 'action-cancel':S.actionAsk=null;S.actionReason='';break;
     case 'action-confirm':await confirmAuditedAction();break;
-    case 'alert-timer':S.view='sessions';S.sessionsMode='now';S.timerAsk=id;break;
+    case 'alert-timer':S.view='sessions';S.sessionsMode='now';askTimer(id);break;
     case 'alert-resolve':S.view='sessions';S.sessionsMode='ledger';S.focusSession=id;break;
     case 'alert-done':S.view='sessions';S.sessionsMode='now';S.doneAsk=id;break;
     case 'alert-collect':S.view='sessions';S.sessionsMode='now';pickPay(session,'Payment done');break;
@@ -273,6 +391,8 @@ async function handleInput(event){
     case 'day-date':{const [year,month,day]=target.value.split('-').map(Number);if(year&&month&&day){goToDayOffset(dayOffsetOf(new Date(year,month-1,day)));
       await refreshOperationalState();render();}break;}
     case 'adv-val':S.advVal=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advVal)target.value=S.advVal;render();break;
+    case 'adv-cash':S.advCash=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advCash)target.value=S.advCash;render();break;
+    case 'adv-upi':S.advUpi=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advUpi)target.value=S.advUpi;render();break;
     case 'reason':S.blockReason=target.value;refreshGate();break;
     case 'adv-reason':S.advReason=target.value;refreshGate();break;
     case 'adv-reference':S.advReference=target.value;refreshGate();break;
@@ -303,10 +423,29 @@ function refreshGate(){
     custom.style.cursor=valid?'pointer':'not-allowed';custom.style.opacity=valid?1:.45;}
   const group=document.querySelector('[data-act="add-group"]');if(group)group.disabled=!groupValid();
   const action=document.querySelector('[data-act="action-confirm"]');if(action)action.disabled=S.actionReason.trim().length<5;
-  const advance=document.querySelector('[data-act="adv-save"]');if(advance&&S.advAsk){const session=sessionById(S.advAsk),value=Math.max(0,parseInt(S.advVal,10)||0);
+  /* The correction sheet types its reason through the same lightweight path as
+     every other dialog — it repaints the gate rather than the whole view, so a
+     new confirm button has to be named here or it never enables. */
+  const correct=document.querySelector('[data-act="adv-correct"]');
+  if(correct&&S.advAsk){const session=sessionById(S.advAsk);
+    const value=Math.max(0,parseInt(S.advVal,10)||0);
+    const inMode=session?Number((session.collectedByMode||{})[S.advPayMode]||0):0;
+    const referenceOk=S.advPayMode==='Cash'||S.advReference.trim().length>=4;
+    const valid=can('manager')&&value>0&&value<=inMode&&S.advReason.trim().length>=5&&referenceOk;
+    correct.disabled=!valid;correct.style.cursor=valid?'pointer':'not-allowed';
+    correct.style.opacity=valid?1:.45;}
+  const advance=document.querySelector('[data-act="adv-save"]');if(advance&&S.advAsk){const session=sessionById(S.advAsk);
+    /* Split reads its total off the two legs, the same way the sheet does — the
+       gate has to agree with what the operator is looking at. */
+    const split=S.advPayMode==='Split';
+    const cash=Math.max(0,parseInt(S.advCash,10)||0),upi=Math.max(0,parseInt(S.advUpi,10)||0);
+    const value=split?cash+upi:Math.max(0,parseInt(S.advVal,10)||0);
     const outstanding=session?Math.max(0,session.amount-(session.discount||0)-(session.collected||0)):0;
-    const discounting=S.advMode==='settle'&&value>0&&value<outstanding,referenceOk=S.advPayMode==='Cash'||S.advReference.trim().length>=4;
-    advance.disabled=!(value>0&&value<=outstanding&&referenceOk&&(!discounting||(can('manager')&&S.advReason.trim().length>=5)));}
+    const discounting=S.advMode==='settle'&&value>0&&value<outstanding;
+    const referenceOk=split?(upi===0||S.advReference.trim().length>=4)
+      :(S.advPayMode==='Cash'||S.advReference.trim().length>=4);
+    advance.disabled=!(value>0&&value<=outstanding&&referenceOk&&(!split||(cash>0&&upi>0))
+      &&(!discounting||(can('manager')&&S.advReason.trim().length>=5)));}
   const refund=document.querySelector('[data-act="refund-save"]');if(refund&&S.refundAsk){const booking=accountBookingById(S.refundAsk),value=Math.max(0,parseInt(S.refundVal,10)||0);
     const available=booking?.collectedByMode?.[S.refundPayMode]||0,referenceOk=S.refundPayMode==='Cash'||S.refundReference.trim().length>=4;
     refund.disabled=!(booking&&value>0&&value<=available&&referenceOk&&S.refundReason.trim().length>=5);}
@@ -320,7 +459,7 @@ function handleKeydown(event){
   if(event.key!=='Escape')return;
   if(S.confirm)S.confirm=null;else if(S.staffAsk){S.staffAsk=null;S.staffReason='';}else if(S.actionAsk){S.actionAsk=null;S.actionReason='';}
   else if(S.advAsk!=null){S.advAsk=null;S.advVal='';}else if(S.refundAsk!=null){S.refundAsk=null;S.refundVal='';S.refundReason='';}
-  else if(S.doneAsk!=null)S.doneAsk=null;else if(S.timerAsk!=null)S.timerAsk=null;
+  else if(S.doneAsk!=null)S.doneAsk=null;else if(S.timerAsk!=null){S.timerAsk=null;S.timerAt=null;}
   else if(S.blockDetail!=null)S.blockDetail=null;else if(S.groupOpen)S.groupOpen=false;else if(S.customOpen)S.customOpen=false;
   else if(S.sel)S.sel=null;else return;render();
 }

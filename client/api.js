@@ -1,5 +1,5 @@
 import { TODAY, isoDate } from './datetime.js';
-import { can, loadPrefs, S } from './state.js';
+import { can, applyTheme, loadPrefs, S } from './state.js';
 import { esc, weekStart } from './domain.js';
 
 export async function apiRequest(path, { method='GET', body } = {}){
@@ -84,6 +84,9 @@ export async function refreshOperationalState(){
 
 export async function boot(onReady){
   loadPrefs();
+  /* Straight after the preference is read and before anything renders, so the
+     page does not flash light on its way into dark. */
+  applyTheme();
   try {
     const auth = await apiRequest('/api/auth/me');
     S.user = auth.user;

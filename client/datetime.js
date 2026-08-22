@@ -6,7 +6,26 @@ export const TODAY_DI = (TODAY.getDay() + 6) % 7;
 export const WEEK_ZERO = new Date(TODAY);
 WEEK_ZERO.setDate(WEEK_ZERO.getDate() - TODAY_DI);
 
+/* Every clock-dependent thing on the board — the now-line, the arrival window,
+   the countdowns, which slots count as past — reads the time through here, so
+   overriding this one function moves all of them together and nothing can
+   disagree about what time it is.
+
+   Local development only: on any other host the override is ignored outright,
+   so it cannot ship a fake clock to a real venue. Set it from the console with
+   localStorage['turf-erp:clock'] = '18:20', clear it with removeItem. */
+const clockOverride = () => {
+  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return null;
+  let raw = null;
+  try { raw = localStorage.getItem('turf-erp:clock'); } catch { return null; }
+  if (!raw) return null;
+  const [hour, minute] = String(raw).split(':').map(Number);
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+  return hour * 60 + (Number.isFinite(minute) ? minute : 0);
+};
 export const nowMin = () => {
+  const forced = clockOverride();
+  if (forced != null) return forced;
   const now = new Date();
   return now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60 + now.getMilliseconds() / 60000;
 };
@@ -36,8 +55,14 @@ export function rng12(start, end){
   const samePeriod = startParts.period === endParts.period;
   return compactTime(start, !samePeriod) + ' to ' + compactTime(end, true);
 }
+export function slotRng12(start, end){
+  const startParts = compactParts(start), endParts = compactParts(end);
+  const samePeriod = startParts.period === endParts.period;
+  const compact = value => value.replace(' ', '');
+  return compact(compactTime(start, !samePeriod)) + '–' + compact(compactTime(end, true));
+}
 export const hourT12 = hour => t12(hour * 60);
-export const hourRng12 = hour => rng12(hour * 60, (hour + 1) * 60);
+export const hourRng12 = hour => slotRng12(hour * 60, (hour + 1) * 60);
 export const clock12 = value => {
   const date = new Date(value);
   return t12(date.getHours() * 60 + date.getMinutes());

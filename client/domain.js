@@ -1,10 +1,25 @@
-import { END_HOUR, NEUTRAL_TINT, PITCH_DEFAULT_HEX, START_HOUR } from './constants.js';
-import { dateForAddress, hourRng12, hours, isoDate, rng12, t12, TODAY, weekStartAt } from './datetime.js';
+import { END_HOUR, NEUTRAL_TINT, PITCH_DEFAULT_HEX, PITCHES, START_HOUR } from './constants.js';
+import { dateForAddress, hourRng12, hours, isoDate, nowMin, rng12, t12, TODAY, weekStartAt } from './datetime.js';
 import { S } from './state.js';
 
-export const esc = value => String(value == null ? '' : value).replace(/[&<>"]/g,
-  char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char]));
+export const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g,
+  char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 export const money = value => '₹' + Math.round(value).toLocaleString('en-IN');
+
+/* ── what a slot costs ──
+   The same arithmetic the server bills by (store.mjs priceFor). It was written
+   out at four separate call sites, so changing the floodlight fee meant finding
+   all four or quoting a customer a price the server would not charge. Quoted
+   money and billed money have to come from one rule.
+
+   The constants still exist twice — here and in store.mjs — because only the
+   deposit is configurable today. If the fee ever becomes a venue setting, this
+   should read it rather than hold its own copy. */
+export const FLOODLIGHT_FROM = 18 * 60;
+export const FLOODLIGHT_FEE = 300;
+export const needsFloodlights = end => end > FLOODLIGHT_FROM;
+export const priceFor = (pitch, start, end) =>
+  Math.round(PITCHES[pitch].rate * (end - start) / 60 + (needsFloodlights(end) ? FLOODLIGHT_FEE : 0));
 export const weekStart = () => weekStartAt(S.weekOffset);
 export function goToDayOffset(offset){
   const absolute = (TODAY.getDay() + 6) % 7 + offset;
@@ -74,7 +89,7 @@ export function coverage(pitch, di, hour, week = S.weekOffset){
   let startFraction = 1, endFraction = 0, hit = null;
   const date = dateForAddress(week, di);
   for (const booking of S.bookings){
-    if (booking.pitch !== pitch || booking.date !== date || booking.status === 'noshow') continue;
+    if (booking.pitch !== pitch || booking.date !== date || ['noshow','cancelled'].includes(booking.status)) continue;
     const start = Math.max(booking.start, hour * 60), end = Math.min(booking.end, (hour + 1) * 60);
     if (end > start){
       startFraction = Math.min(startFraction, (start - hour * 60) / 60);
@@ -90,7 +105,8 @@ export function bookingWindowAt(week, di, pitch, start, duration){
   if (start < START_HOUR * 60 || end > END_HOUR * 60)
     return { ok:false, reason:`Extends past the ${t12(END_HOUR * 60)} closing time.` };
   const date = dateForAddress(week, di);
-  const booking = S.bookings.find(record => record.status !== 'noshow' && overlaps(record, date, pitch, start, end));
+  const booking = S.bookings.find(record => !['noshow','cancelled'].includes(record.status)
+    && overlaps(record, date, pitch, start, end));
   if (booking) return { ok:false, reason:`Overlaps ${booking.team} at ${rng12(booking.start, booking.end)}.` };
   const hold = S.holds.find(record => record.expiresAt > Date.now() && overlaps(record, date, pitch, start, end));
   if (hold) return { ok:false, reason:`Overlaps an active hold at ${rng12(hold.start, hold.end)}.` };
@@ -108,6 +124,17 @@ export const validContact = value => {
   const digits = text.replace(/\D/g, '');
   return digits.length >= 8 && digits.length <= 15 && /^[+\d][\d\s().-]*$/.test(text);
 };
+/* ── when the clock may be said to have started ──
+   The origin an operator can give the timer, bounded the way the server bounds
+   it: a quarter hour of grace before the booked start, never past the booked
+   end, and never later than now — a session cannot begin in the future. Both
+   the dialog and the action clamp through this, so the buttons can never offer
+   a minute the server will refuse. */
+export const timerFloor = session => session.start - 15;
+export const timerCeil = session => Math.min(Math.floor(nowMin()), session.end - 1);
+export const clampTimerAt = (session, minute) =>
+  Math.max(timerFloor(session), Math.min(timerCeil(session), Math.round(minute)));
+
 export const outstandingFor = session => Math.max(0, session.amount - (session.discount || 0) - (session.collected || 0));
 export const collectTotal = () => sessionsToday().filter(session => session.pay !== 'Payment done' && session.status !== 'noshow')
   .reduce((total, session) => total + outstandingFor(session), 0);

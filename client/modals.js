@@ -1,6 +1,6 @@
 import { DOWL, MON, PAY_FORM, PAY_MODES, PITCHES } from './constants.js';
 import { dateForAddress, durTxt, hours, nowMin, rng12, t12 } from './datetime.js';
-import { bookingWindow, esc, money, segCls, sessionById, validContact, weekStart } from './domain.js';
+import { bookingWindow, clampTimerAt, esc, money, priceFor, segCls, sessionById, timerCeil, timerFloor, validContact, weekStart } from './domain.js';
 import { can, S } from './state.js';
 import { refundDialogHtml } from './views/accounts.js';
 import { formFieldsHtml } from './views/availability.js';
@@ -22,7 +22,7 @@ function confirmDialogHtml(){
     <button class="x" data-act="dlg-cancel" aria-label="Close confirmation">&times;</button></div><div class="plate"><div class="plate-kicker">You are confirming</div>
     <div class="plate-time">${rng12(start,start+duration)}</div><div class="plate-dur">${duration===60?'':duration+' min booking'}</div>
     <div class="plate-day">${DOWL[selection.di]}, ${date.getDate()} ${MON[date.getMonth()]} ${date.getFullYear()}</div><div class="plate-foot">
-    <span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${money(pitch.rate*duration/60+(start+duration>18*60?300:0))}</b></div></div>
+    <span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${money(priceFor(S.pitch,start,start+duration))}</b></div></div>
     <p class="dnote">${isHold?'The slot is held for 20 minutes and stays off sale until you confirm or release it.':mode==='confirm-hold'
       ?'This converts the existing hold into a confirmed booking. Details already captured are kept.'
       :'Check the date and time above before confirming. Confirmed slots leave the sellable pool immediately.'}</p>
@@ -34,15 +34,49 @@ function confirmDialogHtml(){
     <button class="dbtn" data-act="dlg-cancel" style="border-radius:18px">Cancel</button></div></div></div>`;
 }
 
+/* ── starting the clock ──
+   Pressing play is not the same question as when the session began. A team that
+   walked on at 7:07 for a 7:00 slot can be given the clock from either minute,
+   and only the person at the counter knows which. So the two minutes worth
+   naming are offered outright, the plate states what is being started, and a
+   one-minute nudge covers the case where neither preset is quite right.
+
+   Everything reads off S.timerAt, which is already clamped to what the server
+   will accept, so a bound the operator cannot cross is shown as a dead button
+   rather than an error after the fact. */
 function timerDialogHtml(){
-  const session=sessionById(S.timerAsk),now=nowMin(),pitch=PITCHES[session.pitch],late=Math.round(now-session.start);
+  const session=sessionById(S.timerAsk),pitch=PITCHES[session.pitch];
+  const now=Math.floor(nowMin()),at=clampTimerAt(session,S.timerAt==null?now:S.timerAt);
+  const duration=session.end-session.start,ends=at+duration;
+  const floor=timerFloor(session),ceil=timerCeil(session);
+  const late=at-session.start,over=ends-session.end;
+  /* Before the booked start there is no "from session start" to offer — that
+     minute has not happened, and a clock cannot begin in the future. The option
+     stays on the dialog stating the minute it would use, but dead, so the
+     choice reads the same whichever side of the start time the team arrives. */
+  const bookedReach=clampTimerAt(session,session.start)===session.start;
+  const onBooked=bookedReach&&at===session.start,onNow=!onBooked&&at===clampTimerAt(session,now);
+  const opt=(mode,label,minute,active,live=true)=>`<button class="${segCls(active,true)} timeropt${live?'':' is-off'}"
+    data-act="timer-mode" data-v="${mode}"${live?'':' disabled'}><b>${label}</b><i>${t12(minute)}</i></button>`;
+  const nudge=(delta,label,enabled)=>`<button class="dbtn timerstep" data-act="timer-nudge" data-v="${delta}"
+    ${enabled?'':'disabled'} aria-label="${delta>0?'Start one minute later':'Start one minute earlier'}">${label}</button>`;
   return `<div class="backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="Start match timer" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
     <span class="modal-kicker">Start match timer</span><button class="x" data-act="timer-cancel" aria-label="Close timer dialog">&times;</button></div><div class="plate">
-    <div class="plate-kicker">Clock now</div><div class="plate-time">${t12(now)}</div><div class="plate-day">${esc(session.team)}</div>
+    <div class="plate-kicker">Clock starts at</div><div class="plate-time">${t12(at)}</div>
+    <div class="plate-dur">${durTxt(duration)} &middot; ends ${t12(ends)}</div>
+    <div class="plate-day">${esc(session.team)}</div>
     <div class="plate-foot"><span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${rng12(session.start,session.end)}</b></div></div>
-    <p class="dnote">${late>0?'Slot began '+late+' min ago. Starting now runs the timer from '+t12(now)+', ending '+t12(session.end)+'.'
-      :'Slot has not begun yet. Starting now runs the timer from '+t12(now)+'.'}</p><div class="stack">
-    <button class="dbtn primary wide sm" data-act="timer-start" data-v="now">Start now &middot; ${t12(now)}</button>
+    <span class="dlabel" style="margin:16px 0 6px">Run the clock from</span>
+    <div class="optrow wide">${opt('now','Now',clampTimerAt(session,now),onNow)}${
+      opt('booked','Session start',session.start,onBooked,bookedReach)}</div>
+    <span class="dlabel" style="margin:14px 0 6px">Adjust by the minute</span>
+    <div style="display:flex;align-items:center;gap:8px">${nudge(-1,'&minus;',at>floor)}
+    <div class="timernow">${t12(at)}</div>
+    ${nudge(1,'+',at<ceil)}</div>
+    <p class="dnote">${late>0?'Team went on '+late+' min after the booked start, so the clock ends '+over+' min late at '+t12(ends)+'.'
+      :late<0?'Starting '+(-late)+' min early. The clock runs its full '+durTxt(duration)+' and ends at '+t12(ends)+'.'
+      :'The clock runs the booked slot exactly, ending at '+t12(ends)+'.'}</p><div class="stack">
+    <button class="dbtn primary wide sm" data-act="timer-start">Start timer &middot; ${t12(at)}</button>
     <button class="dbtn ghost wide" data-act="timer-cancel" style="height:44px">Cancel</button></div></div></div>`;
 }
 
@@ -65,9 +99,17 @@ function doneDialogHtml(){
 function advanceDialogHtml(){
   const session=sessionById(S.advAsk),pitch=PITCHES[session.pitch],settle=S.advMode==='settle';
   const paid=session.collected||0,outstanding=Math.max(0,session.amount-(session.discount||0)-paid);
-  const value=Math.max(0,parseInt(S.advVal,10)||0),discounting=settle&&value>0&&value<outstanding;
-  const referenceOk=S.advPayMode==='Cash'||S.advReference.trim().length>=4;
-  const canSave=value>0&&value<=outstanding&&referenceOk&&(!discounting||(can('manager')&&S.advReason.trim().length>=5));
+  /* Split: the amount is the two legs added up, so every check below — the
+     balance line, the discount test, the save gate — reads one number whichever
+     way the money came in. */
+  const split=S.advPayMode==='Split';
+  const cash=Math.max(0,parseInt(S.advCash,10)||0),upi=Math.max(0,parseInt(S.advUpi,10)||0);
+  const value=split?cash+upi:Math.max(0,parseInt(S.advVal,10)||0);
+  const discounting=settle&&value>0&&value<outstanding;
+  const referenceOk=split?(upi===0||S.advReference.trim().length>=4)
+    :(S.advPayMode==='Cash'||S.advReference.trim().length>=4);
+  const canSave=value>0&&value<=outstanding&&referenceOk&&(!split||(cash>0&&upi>0))
+    &&(!discounting||(can('manager')&&S.advReason.trim().length>=5));
   const balance=settle?(outstanding-value>0?money(outstanding-value)+' discount against '+money(outstanding)+' outstanding'
     :outstanding-value<0?money(value-outstanding)+' above the outstanding amount':'Settles in full, no discount')
     :money(Math.max(0,outstanding-value))+' balance due';
@@ -76,15 +118,30 @@ function advanceDialogHtml(){
   const quick=[...new Set(quickAmounts.filter(amount=>amount>0&&amount<=outstanding))]
     .map(amount=>`<button class="${segCls(value===amount,true)}" data-act="adv-quick" data-v="${amount}" style="height:38px;border-radius:13px">
       ${amount===outstanding?'Full '+money(amount):!settle&&amount===configuredDeposit?'Deposit '+money(amount):(settle?'10% off · ':'')+money(amount)}</button>`).join('');
+  /* ── nothing left to collect ──
+     Then this sheet is not for taking money, it is for correcting it: a card
+     marked paid in error, or paid in the wrong tender. The ledger is
+     append-only, so the correction is a reversing entry against the mode it was
+     taken in — which is also why the server caps it at what that mode actually
+     holds. Manager only, and it has to say what happened. */
+  if (settle && outstanding === 0 && paid > 0) return correctionDialogHtml(session, pitch, paid);
+
   return `<div class="backdrop over"><div class="modal" role="dialog" aria-modal="true" aria-label="${settle?'Record payment':'Advance received'}" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
     <span class="modal-kicker">${settle?'Record payment':'Advance received'}</span><button class="x" data-act="adv-cancel" aria-label="Close payment dialog">&times;</button></div>
     <div style="margin-top:12px"><b style="display:block;font:700 21px var(--sans)">${esc(session.team)}</b><span class="dsub">${esc(pitch.name)} &middot; ${esc(pitch.sub)} &middot; ${rng12(session.start,session.end)}
-    &middot; total ${money(session.amount)}${paid?' · '+money(paid)+' already paid':''}</span></div><label style="display:block;margin-top:14px">
+    &middot; total ${money(session.amount)}${paid?' · '+money(paid)+' already paid':''}</span></div>${split?`<div style="margin-top:14px;display:flex;gap:10px">
+    <label style="flex:1 1 0;min-width:0"><span class="dlabel">Cash</span>
+      <input class="dinput amount" id="adv-cash" data-act="adv-cash" value="${esc(S.advCash)}" placeholder="0"></label>
+    <label style="flex:1 1 0;min-width:0"><span class="dlabel">UPI</span>
+      <input class="dinput amount" id="adv-upi" data-act="adv-upi" value="${esc(S.advUpi)}" placeholder="0"></label></div>
+    <div class="dsub" style="margin-top:8px">${value>0?money(value)+' collected now'
+      :'Enter both parts of the tender'}</div>`
+    :`<label style="display:block;margin-top:14px">
     <span class="dlabel">Amount collected now</span><input class="dinput amount" id="adv-val" data-act="adv-val" value="${esc(S.advVal)}" placeholder="0"></label>
-    <div class="optrow" style="margin-top:9px">${quick}</div><span class="dlabel" style="margin:14px 0 6px">Payment type</span>
-    <div class="optrow">${PAY_MODES.map(mode=>`<button class="${segCls(S.advPayMode===mode,true)}" data-act="adv-mode" data-v="${mode}"
-    style="height:38px;border-radius:13px">${mode}</button>`).join('')}</div>${S.advPayMode!=='Cash'?`<label style="display:block;margin-top:12px">
-    <span class="dlabel">${S.advPayMode} reference · required</span><input class="dinput" id="adv-reference" data-act="adv-reference"
+    <div class="optrow" style="margin-top:9px">${quick}</div>`}<span class="dlabel" style="margin:14px 0 6px">Payment type</span>
+    <div class="optrow">${[...PAY_MODES,'Split'].map(mode=>`<button class="${segCls(S.advPayMode===mode,true)}" data-act="adv-mode" data-v="${mode}"
+    style="height:38px;border-radius:13px">${mode==='Split'?'Cash + UPI':mode}</button>`).join('')}</div>${(split?upi>0:S.advPayMode!=='Cash')?`<label style="display:block;margin-top:12px">
+    <span class="dlabel">${split?'UPI':S.advPayMode} reference · required</span><input class="dinput" id="adv-reference" data-act="adv-reference"
     value="${esc(S.advReference)}" placeholder="Transaction or receipt reference"></label>`:''}${discounting?`<label style="display:block;margin-top:12px">
     <span class="dlabel">Discount reason · manager approval required</span><input class="dinput" id="adv-reason" data-act="adv-reason"
     value="${esc(S.advReason)}" placeholder="Why is the remaining ${money(outstanding-value)} being waived?"></label>`:''}
@@ -145,4 +202,46 @@ export function modalsHtml(){
   if(S.actionAsk)output+=actionDialogHtml();
   if(S.staffAsk)output+=staffDialogHtml();
   return output;
+}
+
+function correctionDialogHtml(session, pitch, paid){
+  const byMode = session.collectedByMode || {};
+  const mode = S.advPayMode === 'Split' ? 'Cash' : S.advPayMode;
+  const inMode = Number(byMode[mode] || 0);
+  const value = Math.max(0, parseInt(S.advVal, 10) || 0);
+  const reasonOk = S.advReason.trim().length >= 5;
+  /* A reversal off a card or a UPI line has to name the transaction it reverses,
+     exactly as taking the money did — the server requires it either way. */
+  const referenceOk = mode === 'Cash' || S.advReference.trim().length >= 4;
+  const canSave = can('manager') && value > 0 && value <= inMode && reasonOk && referenceOk;
+  const taken = PAY_MODES.filter(m => Number(byMode[m] || 0) > 0);
+  return `<div class="backdrop over"><div class="modal" role="dialog" aria-modal="true" aria-label="Edit payment" tabindex="-1">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <span class="modal-kicker">Edit payment</span><button class="x" data-act="adv-cancel" aria-label="Close payment dialog">&times;</button></div>
+    <div style="margin-top:12px"><b style="display:block;font:700 21px var(--sans)">${esc(session.team)}</b>
+    <span class="dsub">${esc(pitch.name)} &middot; ${rng12(session.start,session.end)} &middot; ${money(paid)} collected, nothing outstanding</span></div>
+    <span class="dlabel" style="margin:14px 0 6px">Recorded</span>
+    <dl class="rows">${taken.map(m => `<div><dt>${m}</dt><dd class="v is-money">${money(byMode[m])}</dd></div>`).join('')}</dl>
+    <span class="dlabel" style="margin:14px 0 6px">Reverse from</span>
+    <div class="optrow">${taken.map(m => `<button class="${segCls(mode===m,true)}" data-act="adv-mode" data-v="${m}"
+      style="height:38px;border-radius:13px">${m} &middot; ${money(byMode[m])}</button>`).join('')}</div>
+    <label style="display:block;margin-top:12px"><span class="dlabel">Amount to reverse</span>
+    <input class="dinput amount" id="adv-val" data-act="adv-val" value="${esc(S.advVal)}" placeholder="0"></label>
+    <div class="optrow" style="margin-top:9px"><button class="${segCls(value===inMode,true)}" data-act="adv-quick" data-v="${inMode}"
+      style="height:38px;border-radius:13px">All ${money(inMode)}</button></div>
+    ${mode==='Cash'?'':`<label style="display:block;margin-top:12px">
+    <span class="dlabel">${mode} reference &middot; required</span>
+    <input class="dinput" id="adv-reference" data-act="adv-reference" value="${esc(S.advReference)}"
+    placeholder="Transaction being reversed"></label>`}
+    <label style="display:block;margin-top:12px"><span class="dlabel">What happened &middot; required</span>
+    <input class="dinput" id="adv-reason" data-act="adv-reason" value="${esc(S.advReason)}"
+    placeholder="e.g. recorded against the wrong booking"></label>
+    <div style="font:700 14px var(--sans);margin-top:12px;color:${value>inMode?'var(--red)':'var(--warn)'}">${
+      value>inMode?'Only '+money(inMode)+' was taken in '+mode
+      :value>0?money(value)+' comes off '+mode+', leaving '+money(paid-value)+' collected'
+      :'This writes a reversing entry to the ledger'}</div>
+    ${can('manager')?'':`<div class="dsub" style="margin-top:8px;color:var(--warn)">A manager has to make this correction.</div>`}
+    <div style="display:flex;gap:9px;margin-top:16px"><button class="dbtn primary sm" data-act="adv-correct" ${canSave?'':'disabled'}
+    style="cursor:${canSave?'pointer':'not-allowed'};opacity:${canSave?1:.45}">Correct payment</button>
+    <button class="dbtn sm" data-act="adv-cancel">Cancel</button></div></div></div>`;
 }

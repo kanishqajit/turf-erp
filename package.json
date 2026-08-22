@@ -13,6 +13,6 @@
     "seed:volume": "node scripts/seed-volume.mjs",
     "backup": "node scripts/backup.mjs",
     "test": "node --test",
-    "check": "node --check app.js && for file in client/*.js client/views/*.js scripts/*.mjs; do node --check \"$file\"; done && node --check server.mjs && node --check server/store.mjs && node --test"
+    "check": "node scripts/check-syntax.mjs && node --test"
   }
 }

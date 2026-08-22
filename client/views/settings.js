@@ -17,6 +17,11 @@ export function viewSettings(){
   const newUserReady=S.newName.trim()&&/^\S+@\S+\.\S+$/.test(S.newEmail.trim())&&S.newPassword.length>=12;
   return `<main class="settings"><div><div class="kicker">Console</div><h1 class="h1">Settings</h1></div><section class="setcard">
     <div class="chart-head"><h2 class="h3">Appearance</h2><span class="note">Applies to this console only</span></div><div class="setrow">
+    <div class="setrow-txt"><b>Dark mode</b><span>Turns the page off rather than repainting it: surfaces step by lightness
+    alone and the lime is untouched, because it is the one thing on screen with a colour and it does the same job either
+    way. Stored on this console, so a shared terminal and a back-office laptop can differ.</span></div>
+    <button class="switch${S.theme==='dark'?' on':''}" role="switch" aria-checked="${S.theme==='dark'}"
+    data-act="toggle-theme"><i></i></button></div><div class="setrow">
     <div class="setrow-txt"><b>Colour-code pitches</b><span>Gives each pitch its own colour on the availability grid and on its
     section under Sessions. When off, every pitch uses the standard ink and lime palette.</span></div><button class="switch${enabled?' on':''}"
     role="switch" aria-checked="${enabled}" data-act="toggle-pitch-colors"><i></i></button></div>${enabled?`<div class="pitchcolors">

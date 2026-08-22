@@ -36,8 +36,9 @@ const validDate = value => {
   const date = new Date(year, month - 1, day);
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 };
+const hasRole = (actor, role) => !!actor && (ROLES[actor.role] || 0) >= ROLES[role];
 const requireRole = (actor, role) => {
-  if (!actor || (ROLES[actor.role] || 0) < ROLES[role]) fail(403, 'forbidden', `${role} access is required.`);
+  if (!hasRole(actor, role)) fail(403, 'forbidden', `${role} access is required.`);
 };
 
 function passwordRecord(password){
@@ -483,8 +484,13 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       if (before.status === status) return before;
       const normal = (before.status === 'upcoming' && ['running','noshow'].includes(status))
         || (before.status === 'running' && status === 'done');
-      if (!normal){ requireRole(actor, 'manager'); if (reason.length < 5) fail(400,'reason_required','A reason is required for this status reversal.'); }
-      if (status === 'noshow' && reason.length < 5) fail(400,'reason_required','A no-show reason is required.');
+      /* Counter reality: whoever presses the button is standing in front of the
+         customer and already knows what happened. Making them type a
+         justification first only delays the record catching up with the pitch,
+         so no status change asks for one. The audit row still records who
+         changed what, when, and from which state — the part anyone reviewing
+         it actually reads — and role is still checked on a reversal. */
+      if (!normal) requireRole(actor, 'manager');
       const dateParts = new Intl.DateTimeFormat('en-CA', { timeZone, year:'numeric', month:'2-digit', day:'2-digit' })
         .formatToParts(new Date()).reduce((result,part) => (result[part.type]=part.value,result),{});
       const timeParts = new Intl.DateTimeFormat('en-GB', { timeZone, hour:'2-digit', minute:'2-digit', hourCycle:'h23' })
@@ -492,22 +498,55 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       const today = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
       const currentMinute = Number(timeParts.hour) * 60 + Number(timeParts.minute);
       const manual = atMinute !== null && atMinute !== undefined && atMinute !== '';
-      if (manual){
+      if (manual && !Number.isFinite(Number(atMinute))) fail(400, 'invalid_time', 'A valid session time is required.');
+      const minute = manual ? Math.max(0, Math.min(1439, Math.round(Number(atMinute)))) : currentMinute;
+      /* Saying when play actually began is not a time correction. A team that
+         walks on at 7:07 for a 7:00 slot can be given the clock from either
+         minute, and the operator at the counter is the only one who knows
+         which — so a start stated inside the booking's own window, on the day
+         it is booked for, is an ordinary operator action and needs no reason.
+         It is still audited like any other. Anything outside that — another
+         day, past the booked end, more than 15 minutes early — is a correction
+         and keeps its manager and its reason.
+
+         The window is the whole guard on purpose: it is bounded at both ends
+         by the booking itself, so it needs no second opinion about what time
+         it is now. An earlier version also required the minute to have already
+         passed on the server, which compared the browser's clock against the
+         venue timezone's and refused the start whenever the two disagreed —
+         a different machine clock, or the dev clock override, turned an
+         ordinary start into a correction demanding a manager and a reason. */
+      const statedStart = manual && status === 'running' && before.date === today
+        && minute >= before.start - 15 && minute < before.end;
+      if (manual && !statedStart){
+        /* An operator who overshot the window gets told what is wrong with the
+           minute rather than that they lack a role they were never going to
+           have. A manager may still correct it, so the bounds are explained
+           only to the people the window actually binds. */
+        if (!hasRole(actor, 'manager') && status === 'running' && before.date === today){
+          if (minute < before.start - 15)
+            fail(409, 'session_too_early', 'This session cannot start more than 15 minutes before its booked time.');
+          if (minute >= before.end)
+            fail(409, 'session_elapsed', 'This booking has already ended. Resolve it as a no-show or ask a manager to correct its time.');
+        }
         requireRole(actor, 'manager');
-        if (reason.length < 5) fail(400, 'reason_required', 'A reason is required when correcting a session time.');
-      } else if (before.date !== today){
+      } else if (!manual && before.date !== today){
         fail(409, 'session_date_mismatch', 'Past or future sessions require a manager time correction with a reason.');
       }
-      const minute = manual ? Math.max(0, Math.min(1439, Math.round(Number(atMinute)))) : currentMinute;
-      if (!Number.isFinite(minute)) fail(400, 'invalid_time', 'A valid session time is required.');
       if (!manual && status === 'running' && minute < before.start - 15)
         fail(409, 'session_too_early', 'This session cannot start more than 15 minutes before its booked time.');
       if (!manual && status === 'running' && minute >= before.end)
         fail(409, 'session_elapsed', 'This booking has already ended. Resolve it as a no-show or ask a manager to correct its time.');
       const started = status === 'running' ? minute : before.startedAt;
-      const ended = status === 'done' ? minute : before.endedAt;
-      if (status === 'done' && started != null && ended < started)
-        fail(409, 'invalid_session_sequence', 'A session cannot end before it started.');
+      /* A clock that stops before it started is a skew artefact, not something
+         the counter needs to be argued with about — the operator has already
+         decided the session is over, and refusing the end strands it running
+         with no way to close it. The end is held at the start instead, so the
+         session records as zero length and every duration downstream stays
+         non-negative. */
+      const statedEnd = status === 'done' ? minute : before.endedAt;
+      const ended = status === 'done' && started != null && statedEnd != null && statedEnd < started
+        ? started : statedEnd;
       db.prepare(`UPDATE bookings SET status=?,started_at=?,ended_at=?,version=version+1,updated_at=? WHERE id=?`)
         .run(status, started, ended, isoNow(), id);
       const after = getBooking(id);

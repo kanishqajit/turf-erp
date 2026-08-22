@@ -81,7 +81,8 @@ export function viewAccounts(){
   const due=active.filter(booking=>outstandingFor(booking)>0),netCollected=S.accounts.reduce((sum,booking)=>sum+(booking.collected||0),0);
   const outstanding=due.reduce((sum,booking)=>sum+outstandingFor(booking),0);
   return `<main class="accounts"><div class="headrow"><div><div class="kicker">Accounts</div><h1 class="h1">Collections and refunds</h1></div>
-    <button class="pillbtn" data-act="account-export">Export loaded ledger</button></div>
+    <div class="headrow-acct">${S.accountFocus ? `<button class="pillbtn secondary" data-act="account-clear-focus">Clear highlight</button>` : ''}
+    <button class="pillbtn" data-act="account-export">Export loaded ledger</button></div></div>
     <div class="acct-stats">${[['Net collected',money(netCollected),''],['Outstanding',money(outstanding),outstanding?' cash':''],
       ['Blocks release',String(releaseBlocked.length),releaseBlocked.length?' danger':''],['Due bookings',String(due.length),due.length?' cash':'']]
       .map(([label,value,cls])=>`<div class="stat${cls}"><span class="lbl">${label}</span><b>${value}</b></div>`).join('')}</div>

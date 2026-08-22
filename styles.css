@@ -1,42 +1,38 @@
-/* ═══════════════════════════════════════════════════════
-   TURF OPERATIONS — the operator console, built to the
-   Claude Design handoff (Turf Booking ERP.dc.html).
-   Same ink + lime tokens as the customer app in ../turf-app,
-   laid out for a desk instead of a phone.
-   ═══════════════════════════════════════════════════════ */
+
+/* ── why --fill-deep and not --ink ──
+   `--ink` is the strongest TEXT colour, and in dark it flips to near-white. Any
+   rule painting a fill with it and knocking a white label out of that fill —
+   the brand mark, the active tab, the selected pitch column, the modal — turned
+   white-on-white the moment the theme changed: measured 1.09:1. The design
+   system's answer is a separate token for the fill, retuned per theme, so the
+   knock-out label follows it. In light the two are the same #16181C, so nothing
+   moves; in dark the fill stays deep at #0D0D0D. */
 :root{
   --ink:#16181C;
-  --chrome:#282C31;        /* secondary buttons inside dark panels */
-  --field:#22262B;         /* input wells inside dark panels */
+  --chrome:#282C31;
+  --field:#22262B;
   --hold-btn:#3A3F45;
   --hold-fill:#8A6A11;
-
   --lime:#D7F24B;
   --lime-deep:#BCD53C;
-  --lime-tint:#EDF8C4;     /* held slots */
-  --lime-tint2:#EFF8CE;    /* positive tags */
+  --lime-tint:#EDF8C4;
+  --lime-tint2:#EFF8CE;
   --lime-pale:#F7FCE4;
   --lime-txt:#6E8A11;
   --lime-txt3:#6B7A2E;
-
   --paper:#fff;
   --soft:#F4F5F0;
   --soft2:#F7F8F4;
   --edge:#EAECE4;
   --edge2:#E4E6DE;
-  --edge3:#D5D9CE;         /* chip + round-button outline */
+  --edge3:#D5D9CE;
   --rule:#F0F1EC;
-
-  --muted:#8E949B;
-  --muted2:#9AA0A6;
+  --muted:#63696F;          /* was #8E949B — 3.06:1 on paper */
+  --muted2:#70767D;         /* was #9AA0A6 — 2.41:1 on paper at 9.5px */
   --body:#5E646B;
-
-  /* on dark panels */
   --d-muted:#8B9199;
   --d-body:#A9AEB4;
   --d-off:#4E545B;
-
-  /* status */
   --red:#E4574B;
   --red-deep:#B33227;
   --red-pale:#FFF5F4;
@@ -52,10 +48,24 @@
   --blue-deep:#173E85;
   --blue-bg:#F4F8FF;
   --green:#1E9E5A;
-  --done:#B7C86B;          /* finished block on the timeline */
-
-  --disp:'Barlow Condensed',system-ui,sans-serif;
+  --done:#B7C86B;
+  --disp:'Barlow Condensed','Barlow',system-ui,sans-serif;
   --sans:'Barlow',system-ui,sans-serif;
+  --band-wash:rgba(22,24,28,.07);
+  --seam-wash:rgba(22,24,28,.05);
+  --band-wash-quiet:rgba(22,24,28,.06);
+  --seam-wash-quiet:rgba(22,24,28,.05);
+  --t-display:700 clamp(22px,2.4vw,30px)/1.04 var(--disp);
+  --t-title:700 19px/1.15 var(--disp);
+  --t-tag:600 10px/1 var(--disp);
+  --t-label:800 9.5px/1 var(--sans);
+  --t-body:400 13px/1.5 var(--sans);
+  --tr-tight:-.02em;
+  --tr-caps:.12em;
+  --tr-caps-tight:.07em;
+  --fill-deep:#16181C;
+  --fill-open:#F7FCE4;
+  --fill-blocked:#F4F5F0;
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -72,44 +82,1116 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .shell{min-height:100vh}
 
 /* ─── header ──────────────────────────────────────────── */
-.topbar{display:flex;align-items:center;gap:22px;padding:0 26px;height:70px;background:var(--paper);
-  border-bottom:1px solid var(--edge);position:sticky;top:0;z-index:5}
+/* Three tracks, and the middle one grows with the nav. The sides must be
+   allowed to give — a bare `1fr` floors at its content width, so once the nav
+   gained a fifth tab the account button was pushed off the right edge at any
+   viewport under ~1050px (and at any zoom level that lands there). */
+.topbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:22px;
+  padding:0 26px;height:70px;
+  background:var(--paper);border-bottom:1px solid var(--edge);position:sticky;top:0;z-index:5}
+.brand{min-width:0}
+.brand-txt{min-width:0}
+.brand-txt b,.brand-txt span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand{display:flex;align-items:center;gap:11px}
-.mark{width:42px;height:42px;border-radius:50%;background:var(--ink);color:var(--lime);
+.mark{width:42px;height:42px;border-radius:50%;background:var(--fill-deep);color:var(--lime);
   display:grid;place-items:center;font:700 17px var(--disp)}
 .brand-txt{display:flex;flex-direction:column;gap:1px}
 .brand-txt b{font:700 15px var(--sans);letter-spacing:-.2px}
 .brand-txt span{font:500 11.5px var(--sans);color:var(--muted)}
-.tabs{display:flex;gap:6px;margin-left:14px}
+.tabs{display:flex;gap:6px;background:var(--soft);padding:5px;border-radius:999px;
+  min-width:0;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs .chip{flex:none}
 .nav-short{display:none}
-.badge{display:grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin-left:-2px;
-  border-radius:999px;background:var(--red);color:#fff;font:700 11px var(--sans)}
+.tabs .chip.big{position:relative}
+.tabs .chip.big.nav-alert{margin-right:20px}
+.badge{position:absolute;left:calc(100% + 5px);top:0;display:grid;place-items:center;width:20px;height:20px;padding:0;margin:0;
+  border-radius:999px;background:var(--red-deep);color:#fff;font:700 11px var(--sans)}
 .badge[hidden]{display:none}
-.topbar-end{margin-left:auto;display:flex;align-items:center;gap:12px}
+.topbar-end{display:flex;align-items:center;gap:10px;justify-self:end}
 .livepill{display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:999px;
   background:var(--soft);font:700 12.5px var(--sans)}
 .livepill i{width:8px;height:8px;border-radius:50%;background:var(--lime);display:block}
-.today{font:500 12.5px var(--sans);color:var(--muted)}
+.today{display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;
+  border:1.5px solid var(--edge3);font:600 12.5px var(--sans);color:var(--body);white-space:nowrap}
+.today svg{color:var(--muted2);flex:none}
 .cog{width:38px;height:38px;border-radius:50%;border:1.5px solid var(--edge3);background:var(--paper);
   color:var(--body);cursor:pointer;display:grid;place-items:center;transition:.13s}
 .cog:hover{color:var(--ink);border-color:var(--ink)}
-.cog.on{background:var(--ink);border-color:var(--ink);color:var(--lime)}
-.avatar{width:38px;height:38px;border-radius:50%;background:var(--soft);display:grid;place-items:center;
+.cog.on{background:var(--fill-deep);border-color:var(--fill-deep);color:var(--lime)}
+.avatar{position:relative;width:38px;height:38px;border-radius:50%;background:var(--soft);display:grid;place-items:center;
   font:700 12.5px var(--sans)}
+/* Signed-in is a state of the person, so it rides their mark rather than
+   spending a word of its own in the bar. */
+.avatar-dot{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;
+  background:var(--green);box-shadow:0 0 0 2px var(--paper)}
+/* -- the design system, whole -- */
 
-/* ─── shared controls ─────────────────────────────────── */
-.chip{height:36px;padding:0 14px;border-radius:999px;font:600 13px var(--sans);white-space:nowrap;
-  cursor:pointer;display:inline-flex;align-items:center;transition:.13s;
-  background:var(--paper);color:var(--ink);border:1.5px solid var(--edge3);
-  box-shadow:0 1px 2px rgba(20,30,15,.07)}
+/* Caps roles come from the condensed face and get their tracking widened —
+   set solid, condensed caps close up and stop being legible at label sizes. */
+.t-display{font:var(--t-display);letter-spacing:var(--tr-tight);text-transform:uppercase}
+.t-title{font:var(--t-title);letter-spacing:-.01em;text-transform:uppercase}
+.t-tag{font:var(--t-tag);letter-spacing:var(--tr-caps);text-transform:uppercase}
+.t-body{font:var(--t-body)}
+.t-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+/* the time bubbles */
+.bub{position:relative;display:flex;align-items:center;justify-content:center;height:42px;flex:none;width:100%;padding:0 4px;
+  cursor:pointer;white-space:nowrap;overflow:hidden;text-align:center;font:800 13px var(--sans);letter-spacing:0;
+  font-variant-numeric:tabular-nums;border-radius:15px;
+  transition:.12s;border:1px solid var(--edge2);background:var(--paper);color:var(--ink)}
+.bub.via-app{background:var(--lime);border-color:var(--lime-deep);color:#16181C}
+.bub.counter{background:var(--fill-deep);border-color:var(--fill-deep);color:#fff}
+/* The hour is the thing being scanned for, so it carries the weight and the
+   meridiem rides small beside it on the same baseline. `b` and `i` are only
+   containers here — the size split is the whole point, not emphasis. */
+.bub-time{display:inline-flex;align-items:baseline;justify-content:center;gap:2px;align-self:center;
+  width:fit-content;max-width:100%;margin-inline:auto;
+  overflow:hidden;text-overflow:ellipsis;line-height:1;text-align:center}
+.bub-time b{font:inherit;letter-spacing:-.01em}
+.bub-time i{font-style:normal;font-weight:700;font-size:.62em;opacity:.66;letter-spacing:.02em}
+/* A range that crosses noon keeps both meridiems inline and has to shrink. */
+.bub-time.wide b{font-size:.74em;letter-spacing:0}
+.bub-indicator{position:absolute;z-index:2;top:3px;right:4px;display:inline-flex;align-items:center;
+  justify-content:center;min-width:28px;max-width:calc(100% - 8px);min-height:12px;padding:1px 5px;
+  overflow:hidden;text-overflow:ellipsis;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;
+  font:700 9px/1 var(--disp);letter-spacing:.08em;text-decoration:none}
+.bub.via-app .bub-indicator{background:rgba(255,255,255,.74);color:var(--ink)}
+.bub.part .bub-indicator{background:var(--fill-deep);color:#fff}
+.bub.hold{background:var(--lime-tint);border-color:var(--lime-tint);color:var(--lime-txt3)}
+.bub.hold .bub-indicator{background:rgba(107,122,46,.14);color:var(--lime-txt3)}
+/* Blocked recedes, but it cannot recede into the board itself: --soft is what a
+   board paints its own page with, so the fill steps one stop up and keeps a
+   visible edge. */
+.bub.blocked{background:var(--fill-blocked);border-color:var(--edge2);color:var(--muted)}
+.bub.blocked>.bub-time{text-decoration:line-through}
+.bub.blocked .bub-indicator{background:var(--paper);color:var(--body);box-shadow:0 0 0 1px var(--edge2)}
+.bub.part{background:var(--paper);border-color:var(--ink);color:var(--ink);position:relative}
+/* -- the selected slot --
+   The aside on the right describes one slot, and is no use at all unless the
+   board says which. This was a ring on box-shadow, which every day-view bubble
+   then took back: .schedule-open.full, .counter/.via-app and the three live
+   states all set box-shadow at this same specificity further down the sheet,
+   so the ring was painted and immediately overwritten. Only the week grid,
+   which sets no shadow of its own, ever showed it.
+
+   It rides on outline instead. Nothing else on a bubble uses outline, so no
+   card style can reach it, and it sits outside the border rather than on it,
+   which keeps it legible over the lime open slots and the dark live ones
+   alike. --ink inverts with the theme, so the ring stays the opposite of
+   whatever it is drawn against. */
+.bub.sel,.schedule-bub.sel{outline:3px solid var(--ink);outline-offset:2px;position:relative;z-index:3}
+.bub,.schedule-bub{transition:outline-color .14s ease,transform .14s ease}
+.bub.sel{transform:translateY(-1px)}
+@media (prefers-reduced-motion:reduce){
+  .bub,.schedule-bub{transition:none}
+  .bub.sel{transform:none}
+}
+.bub .ovl{position:absolute;inset:-1px;border-radius:15px;background:var(--fill-deep);color:#fff;
+  display:flex;align-items:center;justify-content:center}
+.schedule-cell{grid-column:var(--grid-col);grid-row:var(--grid-row)/span var(--grid-span,1);position:relative;
+  z-index:1;padding:5px 0;container-type:inline-size}
+/* Overlapping records share the column between them instead of one covering
+   the other. Only ever reached by data the server would have refused. */
+.schedule-cell.is-split{width:calc(100% / var(--lanes,1));
+  margin-left:calc(var(--lane,0) * 100% / var(--lanes,1))}
+.schedule-cell.is-split .schedule-bub{padding-left:9px;padding-right:9px}
+.schedule-cell.is-split .ev-rail{display:none}
+.schedule-cell.is-split .ev-head{gap:5px}
+.schedule-cell.is-split .ev-head .bub-time{font-size:15px}
+.schedule-bub{height:100%;min-height:34px;border-radius:20px;flex-direction:column;gap:3px;padding:9px 13px;text-align:center;
+  border-width:1.5px;box-shadow:0 1px 2px rgba(22,24,28,.04)}
+.schedule-bub:hover{z-index:2;filter:brightness(.99);box-shadow:0 4px 12px rgba(22,24,28,.12)}
+.schedule-bub:focus-visible{z-index:3}
+.bub.schedule-bub>.bub-time{transform:none}
+.schedule-bub .bub-time{font:800 22px/1 var(--sans);max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.is-run .ev-head .bub-time{font-size:21px}
+.is-run .ev-head .bub-time i{font-size:.55em;opacity:.6}
+/* ── how a taller card spends its extra height ──
+   An hour card is exactly full: tag, times, band, no slack. Longer bookings
+   have height to spare, and letting it all fall between the times and the band
+   left a hole with the composition sitting up in the top third. The slack is
+   split above and below the times instead, so the tag holds the top edge, the
+   band holds the bottom, and the times sit centred between them at every
+   length. Longer bookings also carry a little more type, so the card reads as
+   deliberately larger rather than as an hour card that got stretched. */
+.is-run .ev-head{margin-block:auto}
+/* ── one type size, whatever the duration ──
+   Type that grew with height made a two-hour card read as a stretched hour
+   card: the same composition, everything slightly too big, the rail squeezed
+   between two oversized times. So the type is locked to the hour card's own
+   sizes and the extra height buys nothing but air, split above and below the
+   times. A longer booking reads as a longer card because it IS longer, not
+   because its numbers got bigger. */
+.schedule-bub.is-tall{padding:11px 14px}
+/* The band grows with the card too, so it stays a section of it rather than
+   thinning into a stripe as the card gets taller. Specificity matches the
+   `.is-run .ev-foot` rule above and has to beat it, hence the doubled class. */
+.schedule-bub.is-tall .ev-foot{margin:0 -14px -11px;padding:8px 14px 9px}
+
+/* The duration-scale reference grows in two visible steps on the board: 90
+   minutes establishes the larger composition, and 120 minutes or more gets a
+   second step. Width still caps the scale, while the side padding and rail gaps
+   yield first, so the larger type never collides in a compact pitch column. */
+/* ── a column too narrow for the whole composition ──
+   The duration chip is the first thing to go: the two end times state the run
+   and the chip only restates its length, so dropping it buys ~45px without
+   losing anything the card has not already said. Keyed to the cell, which is
+   the container the column width actually lands on. */
+@container (max-width:186px){
+  .schedule-bub .ev-chip{display:none}
+  .schedule-bub .ev-rail i{display:block}
+  .schedule-bub .ev-head{gap:6px}
+  .schedule-bub.is-run .ev-head .bub-time{font-size:max(12.5px,11cqw)}
+  .schedule-bub .ev-foot{gap:5px}
+}
+@container (max-width:150px){
+  .schedule-bub .ev-foot em{display:none}
+}
+@container (min-width:240px){
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer){
+    --h:calc(var(--grid-span,3) * var(--schedule-row,44px) - 10px);
+    --s:min(var(--h),40cqw);
+    --side:min(calc(var(--s) * .15),6cqw);
+    --head-gap:min(calc(var(--s) * .1),3cqw);
+    padding:calc(var(--s) * .1) var(--side) 0;
+    border-radius:calc(var(--s) * .18);gap:0}
+  .daycard:not(.is-dense) .schedule-bub.is-long.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer){
+    --s:min(var(--h),46cqw)}
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer)>small{
+    margin:0;font:700 max(11.5px,calc(var(--s) * .125))/1 var(--disp);
+    letter-spacing:var(--tr-caps-tight)}
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-head{
+    gap:var(--head-gap);margin:calc(var(--s) * .015) 0 0}
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-head .bub-time{
+    font-size:max(22px,calc(var(--s) * .27));letter-spacing:-.03em}
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-rail{
+    height:calc(var(--s) * .1)}
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-foot{
+    margin:auto calc(var(--side) * -1) 0;padding:0 var(--side);
+    height:calc(var(--s) * .27);border-radius:0;box-shadow:inset 0 1px 0 var(--ev-seam);
+    font:700 max(10.5px,calc(var(--s) * .112))/calc(var(--s) * .27) var(--sans)}
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-foot strong{
+    font:inherit;letter-spacing:-.005em}
+  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-foot em{
+    font:inherit;font-weight:600;font-size:.92em;letter-spacing:.01em;opacity:.66}
+}
+.schedule-bub strong{display:block;max-width:100%;font:700 12px/1.15 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.schedule-bub em{display:block;max-width:100%;font:600 11px/1.2 var(--sans);font-style:normal;opacity:.7;
+  font-variant-numeric:tabular-nums;letter-spacing:.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.schedule-bub small{display:block;margin-top:auto;font:700 9.5px/1 var(--disp);letter-spacing:.11em;text-transform:uppercase;opacity:.72}
+/* On a run card the tag holds the top edge outright: its own auto margin would
+   otherwise share the card's spare height with the times' auto margins, and a
+   tall card would open a dead strip above the tag instead of centring the
+   times between tag and band. */
+.schedule-bub.is-run>small{margin-top:0}
+/* ── a taken slot reads as a run of time, not a filled cell ──
+   Start and end anchor the two outer edges with the length riding the rail
+   between them, the way a journey is drawn: the shape tells you how long it is
+   before you have read a single number. Under it, the only two things the
+   counter acts on — who, and the number to call. Open time stays centred;
+   there is nothing to read there, only space to see. */
+.schedule-bub.is-run{align-items:flex-start;text-align:left;justify-content:flex-start;gap:3px}
+.ev-head{display:flex;align-items:center;gap:8px;width:100%;min-width:0}
+/* `.bub-time` centres itself for the hour pills, which in this column flex wins
+   over the container — it has to be undone here, not balanced with margins. */
+.is-run .ev-head .bub-time{margin-inline:0;align-self:auto;flex:none}
+/* The chip rides the rail rather than sitting in it, exactly as the design
+   system's marker does. In flow it was a third item the rail had to fit, and on
+   a column this narrow the rail's share of the head is ~48px against a 45px
+   chip — the far dash was pushed out of the rail and slid under the end time.
+   Out of flow it can never move anything; a rail too short to hold it clips it
+   instead, which is the one failure that stays inside the card. */
+.ev-rail{position:relative;flex:1 1 auto;min-width:14px;display:flex;align-items:center;
+  gap:max(4px,calc(var(--s,44px) * .04))}
+/* The rail's two segments stay down while the chip is up. Centred on the rail,
+   the chip left a segment emerging either side of it, which reads as a line
+   struck through the duration rather than a run of time behind it. The space
+   between the two clock times says the same thing on its own. The segments
+   return only where the chip is dropped for width, so the rail is never an
+   unexplained gap. */
+.ev-rail i{display:none;flex:1 1 0;min-width:0;height:max(2px,calc(var(--s,44px) * .028));
+  border-radius:2px;background:var(--ev-accent);opacity:.5}
+.ev-chip{position:absolute;left:50%;top:50%;translate:-50% -50%;max-width:100%;overflow:hidden;
+  padding:0 max(7px,calc(var(--s,44px) * .055));border-radius:999px;
+  background:var(--ev-accent);color:var(--ev-chip-fg);
+  font:700 max(9.5px,calc(var(--s,44px) * .095))/max(17px,calc(var(--s,44px) * .19)) var(--disp);
+  letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+/* ── the deeper band ──
+   The second tone is a wash of the card's own ink over its own fill, not a
+   separate colour: every kind therefore shades correctly without a palette
+   entry each, and a card whose fill changes keeps its band in step. It bleeds
+   to the card edge and takes the bottom radius, so it reads as a section of
+   the card rather than a box sitting inside one. */
+.ev-foot{display:flex;align-items:baseline;justify-content:space-between;gap:9px;width:100%;min-width:0}
+.is-run .ev-foot{width:auto;align-self:stretch;margin:0 -13px -9px;padding:7px 13px 8px;
+  border-radius:0 0 18px 18px;background:var(--ev-band);box-shadow:inset 0 1px 0 var(--ev-seam)}
+.is-run .ev-foot strong{flex:0 1 auto}
+.is-run .ev-foot em{flex:none;opacity:.9}
+/* Light fills deepen with ink, the dark fill lifts with paper. The default pair
+   comes from the theme, so a card needs no dark-mode rule of its own. */
+.schedule-bub{--ev-band:var(--band-wash);--ev-seam:var(--seam-wash)}
+.schedule-bub.counter{--ev-band:rgba(255,255,255,.09);--ev-seam:rgba(255,255,255,.08)}
+.schedule-bub.via-app{--ev-band:rgba(22,24,28,.11);--ev-seam:rgba(22,24,28,.07)}
+.schedule-bub.hold{--ev-band:rgba(107,122,46,.13);--ev-seam:rgba(107,122,46,.10)}
+.schedule-bub.blocked{--ev-band:var(--band-wash-quiet);--ev-seam:var(--seam-wash-quiet)}
+/* The rail and its chip carry the one accent that reads on each fill. */
+.schedule-bub{--ev-accent:var(--lime-deep);--ev-chip-fg:var(--ink)}
+.schedule-bub.counter{--ev-accent:var(--lime);--ev-chip-fg:var(--ink)}
+.schedule-bub.via-app{--ev-accent:var(--ink);--ev-chip-fg:#fff}
+.schedule-bub.hold{--ev-accent:var(--lime-deep);--ev-chip-fg:var(--ink)}
+.schedule-bub.blocked{--ev-accent:var(--edge3);--ev-chip-fg:var(--body)}
+.schedule-bub.counter,.schedule-bub.via-app{box-shadow:0 2px 9px rgba(22,24,28,.17)}
+.schedule-bub.counter:hover,.schedule-bub.via-app:hover{box-shadow:0 6px 16px rgba(22,24,28,.22)}
+/* A half-hour has room for one line and must not pretend otherwise. */
+.schedule-cell.compact .schedule-bub{flex-direction:row;align-items:center;gap:5px;padding:3px 10px;border-radius:14px}
+.schedule-cell.compact .schedule-bub .bub-time{font-size:13px}
+.schedule-cell.compact .schedule-bub strong,.schedule-cell.compact .schedule-bub small,
+.schedule-cell.compact .schedule-bub em,.schedule-cell.compact .ev-chip{display:none}
+.schedule-cell.compact .ev-rail i{display:block}
+.schedule-cell.compact .schedule-bub.is-run{gap:0}
+.schedule-cell.compact .ev-head{gap:6px}
+.schedule-cell.compact .ev-foot{display:none}
+/* ── open time ──
+   Sellable time carries the same head as a booking — start, rail, end — so an
+   hour reads as a run of time whether it is sold or not. It has no band,
+   because nobody owns it; the word sits above the times in that band's place,
+   which leaves the card two flush left edges instead of centred fragments. */
+/* Open time reads as a clean tile rather than a lime panel: the fill is the
+   page's own paper, and sellable is carried by the green OPEN label and the lime
+   rail and chip instead of by a wash across the whole card. A taken card is the
+   one holding a colour, so open slots sit quiet between them and the eye lands
+   on what is sold, not on what is not. */
+.schedule-open{border-color:var(--edge);color:var(--ink);background:var(--paper)}
+.schedule-open.full{box-shadow:0 1px 3px rgba(22,24,28,.06),0 4px 12px rgba(22,24,28,.05)}
+.schedule-open.partial{border-style:dashed;border-color:var(--edge3);background:var(--soft2);
+  color:var(--body);box-shadow:none;--ev-accent:var(--edge3)}
+/* An open card is a taken card with nothing sold on it, so it is composed the
+   same way: the tag holds the top-left, the two ends hold the outer edges, and
+   the slack falls between them. It was centring both fragments instead, which
+   left the tag floating and the times adrift of the card's own edges. */
+.schedule-bub.schedule-open{justify-content:flex-start;align-items:stretch;gap:0;text-align:left}
+.schedule-open .ev-head{margin-block:auto;width:100%}
+.schedule-open .bub-time{color:inherit;font-weight:800}
+.schedule-bub.schedule-open small{margin:0;color:var(--lime-txt);opacity:1;font-weight:700;letter-spacing:.11em}
+.schedule-open .ev-rail i{opacity:.75}
+.schedule-open.partial small{color:var(--muted)}
+/* A half hour drops the tag and the chip and states only its two ends. */
+.schedule-cell.compact .schedule-open{padding:0 13px}
+.schedule-cell.compact .schedule-open.is-run .ev-head .bub-time{font-size:13.5px}
+.schedule-cell.compact .schedule-open .ev-head{gap:10px}
+/* ── the leftover of a part-booked hour ──
+   Stated rather than drawn. A split fill has to clip the label it sits on and
+   still leaves you measuring a stripe by eye; a number is read once and is
+   exact. It rides the trailing edge so the hour label keeps the middle. */
+.bub-free{position:absolute;right:5px;top:50%;transform:translateY(-50%);z-index:2;
+  padding:2px 5px;border-radius:999px;background:var(--free-bg,var(--lime));color:var(--free-fg,#16181C);
+  font:700 9px/1 var(--disp);font-style:normal;letter-spacing:.07em;white-space:nowrap}
+.bub.counter .bub-free{background:var(--lime);color:#16181C}
+.bub.via-app .bub-free{background:var(--fill-deep);color:#fff}
+.bub.hold .bub-free{background:var(--lime-deep);color:#16181C}
+.bub.blocked .bub-free{background:var(--edge3);color:var(--paper)}
+/* the label has to yield the trailing corner rather than run under the chip */
+.bub.partly>.bub-time{padding-right:50px}
+.is-dense .bub-free{padding:2px 4px;font-size:7px}
+.is-dense .bub-time{font-variant-numeric:tabular-nums}
+.is-dense .schedule-cell{padding:2px 0}
+.is-dense .schedule-bub{min-height:16px;flex-direction:row;align-items:center;justify-content:flex-start;
+  gap:6px;padding:2px 10px;border-radius:9px;border-width:1px;box-shadow:none;text-align:left}
+.is-dense .schedule-bub:hover{box-shadow:0 2px 8px rgba(22,24,28,.16)}
+.is-dense .schedule-bub .bub-time{font-size:11.5px;margin-inline:0;align-self:auto}
+.is-dense .schedule-bub .bub-time i{font-size:.66em}
+/* Collapsed, every row is the same two-column line — a fixed time column, then
+   the name — so the names stack on one left edge down the whole board and the
+   eye runs the column instead of hunting for where each card happens to start.
+   The paired times and their rail are an expanded-view idea; here one range in
+   one format serves every kind of row, open and taken alike. */
+.ev-range{display:none}
+.is-dense .ev-head{display:none}
+.is-dense .ev-range{display:block;flex:none;width:var(--dense-time)}
+.is-dense .ev-range .bub-time,.is-dense .schedule-open .bub-time,.is-dense .schedule-bub>.bub-time{
+  margin-inline:0;align-self:auto;justify-content:flex-start;width:100%;max-width:none}
+.is-dense .schedule-open>.bub-time,.is-dense .schedule-bub>.bub-time{flex:none;width:var(--dense-time)}
+.is-dense .is-run .ev-foot{width:auto;flex:1 1 auto;min-width:0;align-self:auto;
+  margin:0;padding:0;background:none;box-shadow:none;border-radius:0}
+.is-dense .ev-foot em,.is-dense .is-run small,.is-dense .schedule-bub small{display:none}
+.is-dense .schedule-bub strong{flex:1 1 auto;min-width:0;font:700 10.5px/1 var(--sans);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.is-dense .schedule-open strong{font:700 10.5px/1 var(--disp);letter-spacing:.1em;opacity:.6}
+/* A half hour is 22px collapsed and can only carry its own time. */
+.is-dense .schedule-cell.compact .schedule-bub{padding:1px 10px;border-radius:7px}
+.is-dense .schedule-cell.compact .schedule-bub .bub-time{font-size:10px;opacity:.72}
+.is-dense .schedule-open.partial{background:transparent;border-style:dashed;border-color:var(--edge2)}
+/* The week grid collapses on the same switch. */
+.is-dense .bub{height:22px;border-radius:8px;font-size:10.5px}
+/* the part-booked overlay traces the bubble, so it has to match its radius */
+.is-dense .bub .ovl{border-radius:9px}
+.is-dense .bub-indicator{display:none}
+/* ── arriving, ready, running ──
+   The action sits on the card's top-right, opposite the kind tag, because that
+   corner is the one piece of a taken card carrying nothing. It is a sibling of
+   the card rather than a child: the card is itself a button, and a button
+   inside a button is not something the DOM will honour. */
+/* ── the live card ──
+   Rounder and taller than a planning card, and lifted above its neighbours: it
+   is the one thing on the board with something to do right now, so it is allowed
+   to break the grid's rhythm slightly rather than sit politely inside it. */
+.schedule-cell.is-onstage{z-index:9}
+.schedule-bub.is-face{border-radius:26px;min-height:104px;padding:11px 14px;
+  justify-content:center;align-items:stretch;gap:0}
+.schedule-bub.is-face>small{position:absolute;top:11px;left:16px;margin:0}
+/* The controls own the outer thirds, so the face keeps clear of them. */
+.ev-face{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;width:100%;padding:12px 60px 0;text-align:center;min-width:0}
+.ev-face-top{font:700 11px/1.2 var(--disp);letter-spacing:.11em;text-transform:uppercase;opacity:.6;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ev-count{font:800 34px/1 var(--sans);letter-spacing:var(--tr-tight);font-variant-numeric:tabular-nums;
+  color:var(--red);font-feature-settings:"tnum"}
+.ev-face-cue{font:700 20px/1.05 var(--disp);letter-spacing:.01em;text-transform:uppercase}
+.ev-face-sub{font:700 11px/1.2 var(--sans);opacity:.72;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.ev-acts{position:absolute;z-index:7;top:7px;right:9px;display:flex;align-items:center;
+  flex-wrap:wrap;justify-content:flex-end;gap:4px;max-width:calc(100% - 18px)}
+/* Centred under the caption for the states whose action is a single decision. */
+.ev-acts.is-center{top:auto;left:0;right:0;bottom:12px;justify-content:center;
+  flex-wrap:nowrap;max-width:none;gap:7px;padding:0 14px}
+/* Next to the primary, quiet still has to be a comfortable target. */
+.ev-acts.is-center .ev-act.is-quiet{padding:7px 12px;font-size:9.5px}
+/* Flanking, thumb-sized, the way a phone timer places pause and stop. */
+.ev-acts.is-flank{inset:0;top:0;right:0;justify-content:space-between;align-items:center;
+  flex-wrap:nowrap;max-width:none;padding:0 13px;pointer-events:none}
+.ev-acts.is-flank>*{pointer-events:auto}
+.ev-round{width:42px;height:42px;flex:none;display:grid;place-items:center;cursor:pointer;
+  border:0;border-radius:50%;padding:0;transition:.12s;
+  background:color-mix(in srgb,var(--paper) 16%,transparent);color:var(--ev-fg,#fff)}
+.ev-round svg{width:21px;height:21px;stroke:currentColor}
+.ev-round svg:not([fill="none"]){fill:currentColor}
+.ev-round:hover{background:color-mix(in srgb,var(--paper) 30%,transparent);transform:scale(1.06)}
+.ev-round.is-end{background:color-mix(in srgb,var(--red) 30%,transparent);color:var(--red)}
+.ev-round.is-end:hover{background:var(--red);color:#fff}
+.ev-act{display:inline-flex;align-items:center;gap:5px;
+  padding:4px 9px;border-radius:999px;border:1px solid var(--ev-accent);cursor:pointer;
+  background:var(--paper);color:var(--ink);white-space:nowrap;text-decoration:none;
+  font:700 10px/1 var(--disp);letter-spacing:.1em;text-transform:uppercase;transition:.12s}
+/* The one thing the card is asking for, at a size that says so. */
+.ev-act.is-big{padding:9px 20px;font-size:13px;letter-spacing:.11em;
+  box-shadow:0 2px 10px rgba(22,24,28,.22)}
+.ev-act:hover{background:var(--ev-accent);color:var(--ev-chip-fg,var(--ink))}
+.ev-act.is-go{background:var(--lime);border-color:var(--lime-deep);color:#16181C}
+.ev-act.is-go:hover{background:var(--lime-deep)}
+.ev-act.is-quiet{background:transparent;border-color:currentColor;color:inherit;opacity:.7}
+.ev-act.is-quiet:hover{opacity:1;background:rgba(255,255,255,.14);color:inherit}
+.ev-act.is-stop{background:var(--red);border-color:var(--red);color:#fff}
+.ev-act.is-stop:hover{background:var(--red-deep,var(--red));filter:brightness(.92)}
+.ev-act.is-live{background:transparent;border-color:transparent;color:var(--red);
+  cursor:default;padding-inline:2px 4px;font-variant-numeric:tabular-nums}
+.ev-act.is-live i{width:6px;height:6px;border-radius:50%;background:var(--red);
+  animation:evpulse 1.6s ease-in-out infinite}
+@keyframes evpulse{0%,100%{opacity:1}50%{opacity:.25}}
+/* A booking waiting on someone should catch the eye without shouting. */
+.schedule-bub.is-arriving{box-shadow:0 0 0 2px var(--ev-accent),0 3px 12px rgba(22,24,28,.2)}
+.schedule-bub.is-ready{box-shadow:0 0 0 2px var(--lime-deep),0 3px 12px rgba(22,24,28,.2)}
+.schedule-bub.is-running{box-shadow:0 3px 14px rgba(22,24,28,.24)}
+/* ── the timer ring ──
+   The card's own outline is the progress bar: it closes back on itself as the
+   session runs out, so a glance shows how far through every live match is
+   without reading a number off any of them. */
+/* An absolutely positioned child resolves inset against the padding box, so
+   inset:0 lands the ring inside the card's 1px border and it reads as a ring
+   drawn on the card rather than as the card's own edge. Pulling it out by the
+   border width puts the stroke back on the outline itself, which is the whole
+   idea — the card is the progress bar. */
+/* An SVG is a replaced element, so `width:auto` resolves to its intrinsic
+   300x150 rather than stretching to the inset box — the ring was being drawn
+   around a phantom rectangle larger than the card and spilling past its
+   corners. The size has to be stated, and it is the card plus the border width
+   the negative inset pulls it out by on each side. */
+.ev-ring{position:absolute;inset:calc(-1 * var(--ev-bw,1px));pointer-events:none;
+  width:calc(100% + 2 * var(--ev-bw,1px));height:calc(100% + 2 * var(--ev-bw,1px));
+  overflow:visible;z-index:5}
+.ev-ring rect{width:calc(100% - 4px);height:calc(100% - 4px);fill:none;stroke-width:4.5;
+  stroke-linejoin:round}
+/* A card wearing the ring hides its own border so the two do not double up. */
+.schedule-bub.is-running{border-color:transparent}
+/* The running clock is red wherever it appears — the ring, the dot, the count —
+   because it is the one thing on the board that is running out. */
+.ev-ring-track{stroke:var(--red);opacity:.22}
+.ev-ring-fill{stroke:var(--red);stroke-linecap:round;transition:stroke-dasharray .9s linear}
+.schedule-bub.is-over .ev-ring-fill{animation:evpulse 1.2s ease-in-out infinite}
+/* The arriving states keep the card's own fill, so the controls have to take
+   their contrast from it rather than assuming a dark ground. */
+.schedule-bub.is-arriving,.schedule-bub.is-ready{border-radius:26px}
+.schedule-bub.is-arriving .ev-count,.schedule-bub.is-ready .ev-count{color:inherit}
+.schedule-bub.is-face .ev-face-sub{opacity:.66}
+/* Room for the centred button, which sits over the card's lower edge. */
+.schedule-bub.is-arriving,.schedule-bub.is-ready{min-height:116px}
+/* ...but never at an hour. 116px is a third taller than the cell a one-hour
+   booking bought, and the excess does not vanish — it lands on the booking
+   underneath and masks it. A live composition that needs more room than its
+   duration allows has to shed, not force the cell open: the contact line goes
+   (it is on the tooltip and in the panel), the cue steps down, and the tray is
+   drawn to the height that is actually there. */
+.schedule-bub.is-live-hour.is-arriving,
+.schedule-bub.is-live-hour.is-ready{min-height:0}
+.schedule-bub.is-live-hour.has-tray .ev-face-sub{display:none}
+.schedule-bub.is-live-hour.has-tray .ev-face-cue{font-size:15px}
+.schedule-bub.is-live-hour.has-tray .ev-face-top{font-size:10px}
+.schedule-bub.is-live-hour.is-face{padding-top:5px}
+.schedule-bub.is-live-hour.has-tray .ev-face{padding-top:0;gap:0}
+.schedule-bub.is-live-hour.has-tray>small{font-size:8.5px}
+.schedule-bub.is-arriving .ev-face,.schedule-bub.is-ready .ev-face{padding:6px 10px 32px}
+.schedule-bub.is-running .ev-face{padding:10px 58px 0}
+/* ── played and paid ──
+   Recedes rather than disappears. Fading the whole card keeps its colour and
+   its shape — you can still tell an app booking from a counter one at a glance,
+   and the run of the day still reads — while making clear there is nothing here
+   to act on. Hover brings it back, because "who had the 8am?" is still a
+   question worth answering after the money is in. */
+/* The top-right action row and the top-left label share the card's first line,
+   so the label takes exactly what the row leaves it: the row's own width plus
+   its offsets, not a percentage that drifts as the caps scale changes. A card
+   with a wider button states its width in --ev-actsw. Centred and flanking rows
+   sit clear of the label and are left alone. */
+.schedule-cell:has(>.ev-acts:not(.is-center):not(.is-flank)) .schedule-bub>small{
+  max-width:calc(100% - var(--ev-actsw,161px) - 30px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* A settled card's one action recedes with it — the card is done; the tray is
+   only there for the correction nobody expects to make. Hover brings both back. */
+.schedule-cell[data-state="settled"] .ev-acts{opacity:.55;transition:opacity .14s}
+.schedule-cell[data-state="settled"]:hover .ev-acts{opacity:1}
+.schedule-cell[data-state="settled"] .ev-act.is-quiet{background:var(--paper);border-color:var(--edge3);color:var(--body)}
+.schedule-cell[data-state="settled"] .ev-act.is-quiet:hover{background:var(--fill-deep);border-color:var(--fill-deep);color:#fff}
+.schedule-bub.is-settled{opacity:.42;filter:saturate(.4);transition:opacity .14s,filter .14s}
+.schedule-bub.is-settled:hover,.schedule-bub.is-settled:focus-visible{opacity:1;filter:none}
+.schedule-bub.is-settled .ev-foot{box-shadow:none}
+/* ── ended, still owing ──
+   The card stops being a schedule entry and becomes a debt: red throughout, the
+   times demoted to context, and the two things needed to chase the money — who
+   they are and the number to ring — promoted to the largest text on it. */
+.schedule-bub.is-owed{--ev-bg:var(--red);--ev-fg:#fff;--ev-accent:#fff;--ev-chip-fg:var(--red);
+  --ev-band:rgba(0,0,0,.22);--ev-seam:rgba(0,0,0,.16);
+  background:var(--red);border-color:var(--red);color:#fff;
+  box-shadow:0 3px 16px color-mix(in srgb,var(--red) 45%,transparent)}
+.schedule-bub.is-owed .ev-head{opacity:.72}
+.schedule-bub.is-owed .ev-head .bub-time{font-size:15px}
+.schedule-bub.is-owed .ev-chip{background:#fff;color:var(--red)}
+.schedule-bub.is-owed .ev-rail i{background:#fff;opacity:.45}
+.schedule-bub.is-owed .ev-foot strong{font-size:14.5px;letter-spacing:-.01em}
+.schedule-bub.is-owed .ev-foot em{font-size:13px;opacity:1;font-weight:700}
+.schedule-bub.is-owed small{color:#fff;opacity:.85}
+.is-owed .ev-act.is-go{background:#fff;border-color:#fff;color:var(--red)}
+.is-owed .ev-act.is-go:hover{background:rgba(255,255,255,.86)}
+.is-owed .ev-act.is-quiet{color:#fff;border-color:rgba(255,255,255,.6)}
+/* ── unpaid, as a priority card ──
+   Ported from the design system's owing card. Every other kind states what it
+   is with a flat fill; this one states that something is wrong, and a flat wash
+   of coral reads calm at exactly the moment it should not. So it takes the one
+   texture in the system — hazard stripes — a white inset ring, and the only
+   movement anywhere on the board. A card holding money moves, slightly, until
+   somebody deals with it. */
+.schedule-bub.is-owed{background:#BE3B2E;border-color:#BE3B2E;
+  background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.06) 0 16px,transparent 16px 34px);
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 8px 26px rgba(190,59,46,.36);
+  animation:owedbreathe 2.2s ease-in-out infinite}
+/* It breathes in its own glow only: an outline growing outward would climb over
+   whatever card sits above it in the column. */
+@keyframes owedbreathe{
+  0%,100%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 8px 26px rgba(190,59,46,.3)}
+  50%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 8px 26px rgba(190,59,46,.62)}}
+/* The tag becomes a white plate — the one label in the system that inverts —
+   and the end time sits opposite it, because "how long has this been owed" is
+   the question that decides whether you walk over. */
+.schedule-bub.is-owed .ev-owedtop{display:flex;align-items:center;justify-content:space-between;
+  gap:8px;width:100%;min-width:0}
+.schedule-bub.is-owed .ev-owedtop b{flex:none;padding:2px 8px;border-radius:999px;background:#fff;
+  color:#A82E22;font:700 9.5px/1.35 var(--disp);letter-spacing:.09em;text-transform:uppercase}
+.schedule-bub.is-owed .ev-owedtop i{flex:0 1 auto;min-width:0;font-style:normal;color:#fff;opacity:.85;
+  font:700 9.5px/1.35 var(--disp);letter-spacing:.06em;text-transform:uppercase;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The band is hazard-striped too, and states the money rather than the phone. */
+.schedule-bub.is-owed .ev-foot{
+  background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.11) 0 9px,transparent 9px 19px);
+  box-shadow:inset 0 1px 0 rgba(0,0,0,.24)}
+.schedule-bub.is-owed .ev-foot em{color:#fff;opacity:1;font-weight:700}
+/* The rail dims because the session is over — the money is the live part now.
+   The marker on it does not dim: taking the whole rail down took the chip too. */
+.schedule-bub.is-owed .ev-rail i{opacity:.42}
+.schedule-bub.is-owed .ev-chip{background:#fff;color:#A82E22}
+/* Motion is reserved: this is the only card on the board that moves, so it
+   cannot be mistaken for decoration. Anyone who has asked not to see motion
+   still gets the stripes, the ring and the glow — only the movement stops. */
+@media (prefers-reduced-motion: reduce){
+  .schedule-bub.is-owed{animation:none;
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 8px 26px rgba(190,59,46,.5)}
+}
+/* At an hour the card cannot hold the run of time, the band and the tray, so
+   the times go: on a card about money they are the one part nobody acts on, and
+   "Ended 9:30 AM" on the top row already says when it stopped. */
+.schedule-bub.is-owed.is-short .ev-head{display:none}
+/* Four classes, because the generic `.is-short.has-tray` floor is three and is
+   declared later in the sheet — specificity has to carry this, not order. */
+/* The reserve underneath is exactly the tray drawn above it — its badge plus
+   its own inset — so the band stops where the pill starts instead of guessing. */
+/* The band bleeds to the card's edges, so its negative margin has to be exactly
+   the card's side padding. Both read one variable — hardcoding the pair let them
+   drift apart and the band ran 3px past the card on each side. */
+/* The same reservation the other tray cards take. This one was written out
+   longhand inside a padding shorthand, so it kept the old hand-summed pair of
+   badge measures after the shared value was derived, and went on running its
+   team name and its amount under the tray. */
+.schedule-bub.is-owed.is-short.has-tray{--pad-x:max(9px,calc(var(--s-tray) * .09));
+  padding:3px var(--pad-x) var(--tray-clear);gap:0}
+.schedule-bub.is-owed.is-short .ev-owedtop b{font-size:8.5px;padding:1px 6px}
+.schedule-bub.is-owed.is-short .ev-owedtop i{font-size:8.5px}
+.schedule-bub.is-owed.is-short .ev-foot{margin:auto calc(var(--pad-x) * -1) 0;padding:2px var(--pad-x) 3px}
+/* The design system pairs a larger name with a smaller, heavier amount so the
+   two read as name-then-money rather than one block. Shrinking both to the same
+   size for the short card threw that away — the proportion is kept instead. */
+.schedule-bub.is-owed.is-short .ev-foot strong{font-size:12px}
+.schedule-bub.is-owed.is-short .ev-foot em{font-size:10.8px}
+
+
+/* ═══════════════════════════════════════════════════════
+   APP ELEMENTS — the console's own panel vocabulary
+   Lifted from the operator app: dark ink panels on the pale page, lime for the
+   one thing you can do, condensed for anything shouted, grotesk with tabular
+   figures for every number. Every element below reads the same tokens as the
+   schedule card, so a token change moves both.
+   ═══════════════════════════════════════════════════════ */
+.panel{background:var(--fill-deep);color:#fff;border-radius:26px;padding:20px 22px;
+  box-shadow:0 8px 30px rgba(22,24,28,.14)}
+.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.panel-x{width:38px;height:38px;flex:none;display:grid;place-items:center;cursor:pointer;
+  border:0;border-radius:50%;background:var(--chrome);color:var(--d-muted);font-size:15px;transition:.12s}
+.panel-x:hover{background:var(--hold-btn);color:#fff}
+.panel-rule{height:1px;margin:16px 0;border:0;background:rgba(255,255,255,.09)}
+/* The two things a slot is: when, and what it is. The range is the largest type
+   on the panel because it is what the operator matched against the board. */
+.slot-time{margin:14px 0 2px;font:800 34px/1 var(--sans);letter-spacing:var(--tr-tight);
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.slot-meta{margin:0;font:500 14px/1.35 var(--sans);color:var(--d-muted)}
+/* Status pills are sentence case, not caps: they name a state rather than label
+   a field, and the app reads them as words. */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:999px;
+  font:700 13px/1 var(--disp);letter-spacing:.01em;white-space:nowrap;
+  background:var(--lime);color:#16181C}
+.pill.is-quiet{background:var(--chrome);color:var(--d-body)}
+.pill.is-pale{background:var(--soft);color:var(--body)}
+.pill.is-warn{background:var(--amber-bg);color:var(--amber-txt)}
+.pill.is-owing{background:var(--red);color:#fff}
+/* Label left, value right, on one baseline. The label recedes because the value
+   is the answer; both stay on one line and the value never wraps. */
+.rows{display:flex;flex-direction:column}
+.rows>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:9px 0}
+.rows dt,.rows .k{font:500 14px/1.3 var(--sans);color:var(--d-muted)}
+.rows dd,.rows .v{margin:0;font:700 14px/1.3 var(--sans);color:#fff;text-align:right;
+  font-variant-numeric:tabular-nums}
+.rows .v.is-money{letter-spacing:-.01em}
+.rows .v.is-good{color:var(--lime)}
+.rows .v.is-owing{color:var(--warn)}
+/* ── buttons ──
+   One lime primary per panel; everything else is chrome or a plain underline.
+   Sentence case at this size — condensed caps stop reading past ~13px. */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;
+  padding:15px 22px;border:0;border-radius:999px;transition:.12s;text-decoration:none;
+  font:700 16px/1 var(--sans);letter-spacing:-.005em;background:var(--chrome);color:#fff}
+.btn:hover{filter:brightness(1.12)}
+.btn.is-go{background:var(--lime);color:#16181C}
+.btn.is-go:hover{background:var(--lime-deep);filter:none}
+.btn.is-off{background:var(--hold-btn);color:var(--d-muted);cursor:default}
+.btn.is-off:hover{filter:none}
+.btn.is-block{width:100%}
+.btn.is-sm{padding:11px 16px;font-size:14px}
+.btn-link{display:block;width:100%;margin-top:14px;padding:4px;border:0;background:none;cursor:pointer;
+  color:var(--d-body);font:500 14px/1.3 var(--sans);text-decoration:underline;text-underline-offset:3px}
+.btn-link:hover{color:#fff}
+.btn-row{display:flex;gap:10px}
+.btn-row>.btn{flex:1 1 auto}
+/* ── segmented ──
+   Mutually exclusive states as one row. Selected takes paper on ink; a state the
+   record has already passed takes the muted grey instead of the full white, so
+   "done" and "chosen" do not read the same. */
+.seg{display:flex;flex-wrap:wrap;gap:8px}
+.seg button{flex:1 1 auto;padding:12px 10px;border:0;border-radius:12px;cursor:pointer;
+  background:var(--chrome);color:var(--d-muted);font:500 14px/1.2 var(--sans);transition:.12s}
+.seg button:hover{color:#fff}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--ink);font-weight:700}
+.seg button.is-past[aria-pressed="true"]{background:var(--d-off);color:#fff}
+.seg.is-pale button{background:var(--soft);color:var(--muted)}
+.seg.is-pale button[aria-pressed="true"]{background:var(--d-off);color:#fff}
+/* ── fields ──
+   The caps label is the one place caps belong: it names the field and is read
+   once. Condensed, tracked open, muted — it must not compete with the value. */
+.field{display:block;margin-top:14px}
+.field>span{display:block;margin-bottom:7px;font:700 11px/1 var(--disp);letter-spacing:var(--tr-caps);
+  text-transform:uppercase;color:var(--d-muted)}
+.field input,.field textarea{width:100%;padding:15px 16px;border:1px solid transparent;border-radius:14px;
+  background:var(--field);color:#fff;font:500 15px/1.3 var(--sans);resize:none}
+.field input::placeholder,.field textarea::placeholder{color:var(--d-off)}
+.field input:focus,.field textarea:focus{outline:0;border-color:var(--lime-deep)}
+.field input.is-pin{letter-spacing:.5em;font-weight:700}
+/* A note the operator is accountable for, not a decoration. */
+.notice{display:flex;gap:9px;font:500 13px/1.45 var(--sans);color:var(--d-body)}
+.notice::before{content:"";flex:none;width:7px;height:7px;margin-top:6px;border-radius:50%;background:var(--warn)}
+/* ── chips on the pale page ──
+   The pitch selector: paper chips with the current one inverted to ink. */
+.chips{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+.chip{flex:none;white-space:nowrap;padding:10px 18px;border:1px solid var(--edge3);border-radius:999px;
+  cursor:pointer;background:var(--paper);color:var(--body);font:500 14px/1 var(--sans);transition:.12s}
+.chip:hover{border-color:var(--muted2);color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--fill-deep);border-color:var(--fill-deep);color:#fff;font-weight:700}
+.chip.is-round{width:40px;height:40px;padding:0;display:grid;place-items:center;font-size:15px}
+/* ── a booking as a row card ──
+   The board's card, in the list. Name largest, meta under it, the run of the
+   session drawn as one bar, then the two numbers that settle it. */
+.rowcard{width:100%;padding:15px 17px;border-radius:22px;background:var(--fill-deep);color:#fff;text-align:left;
+  border:0;display:flex;flex-direction:column;gap:0}
+.rowcard.is-done{background:var(--paper);color:var(--muted2);box-shadow:inset 0 0 0 1px var(--edge2)}
+.rowcard-top{display:flex;align-items:center;gap:8px}
+.rowcard-left{display:flex;gap:8px;flex:1 1 auto;min-width:0}
+.rowcard-clock{font:700 14px/1 var(--sans);color:var(--lime);font-variant-numeric:tabular-nums}
+.rowcard.is-done .rowcard-clock{color:var(--muted2);font-weight:500}
+.rowcard h3{margin:11px 0 1px;font:700 22px/1.1 var(--sans);letter-spacing:-.01em;color:inherit}
+.rowcard.is-done h3{color:var(--body)}
+.rowcard p{margin:0;font:500 13.5px/1.3 var(--sans);color:var(--d-muted)}
+.rowcard.is-done p{color:var(--muted2)}
+.bar{height:7px;margin:13px 0 11px;border-radius:99px;background:rgba(255,255,255,.13);overflow:hidden}
+.rowcard.is-done .bar{background:var(--d-off)}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--lime)}
+.rowcard-foot{display:flex;align-items:baseline;justify-content:space-between;gap:14px;
+  font:500 13px/1.3 var(--sans);color:var(--d-muted)}
+.rowcard-foot b{font-weight:700;color:var(--lime-deep)}
+.rowcard.is-done .rowcard-foot b{color:var(--lime-txt)}
+.rowcard .btn-row{margin-top:13px}
+/* ── the day strip ──
+   The whole day as one bar with the booked runs on it and a marker at now. */
+.strip{position:relative;padding:14px 16px 8px;border-radius:20px;background:var(--paper)}
+.strip-bar{position:relative;height:26px;border-radius:99px;background:var(--soft)}
+.strip-bar i{position:absolute;top:0;bottom:0;border-radius:99px;background:var(--lime-tint)}
+.strip-bar i.is-live{background:var(--fill-deep);box-shadow:0 0 0 2px var(--paper)}
+.strip-now{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--red)}
+.strip-now::before{content:"";position:absolute;top:-4px;left:-3px;width:8px;height:8px;
+  border-radius:50%;background:var(--red)}
+.strip-scale{display:flex;justify-content:space-between;margin-top:7px;
+  font:600 11px/1 var(--sans);letter-spacing:.04em;color:var(--muted2);font-variant-numeric:tabular-nums}
+
+/* ── the action tray ──
+   A card with something to do gets one full-width lime pill across its bottom,
+   the label centred and an icon badge riding beside it: at a glance the card
+   states what it is, and the tray states the one thing to do about it. Sentence
+   case at this size — it is a spoken instruction, not a field label. A second
+   action rides alongside at its own width and never takes the accent. */
+/* The tray scales the way everything else in the system does: every measure is
+   a ratio of the card's height, taken against the 150px the design system gives
+   an acting card. A board card gets the height its duration bought it, so at an
+   hour the same tray is drawn smaller rather than drawn over the card below it.
+   The floors are what a ratio alone cannot give — past a point a pill stops
+   being pressable and a label stops being readable, so each measure holds a
+   minimum and the ratio governs only above it. */
+/* The tray is a sibling of the card, so it is positioned against the CELL —
+   which carries 5px of vertical padding the card does not. That padding has to
+   be added back or the inset is measured to the wrong edge and the tray ends up
+   flush against the card's bottom rather than inset from it. */
+.schedule-cell{--s-tray:min(calc(var(--grid-span,2) * var(--schedule-row,44px)),150px);--cell-pad:5px;
+  /* What the tray actually occupies at the bottom of the card, built from the
+     same three expressions the button is: how far it is lifted off the card's
+     bottom edge, its own two paddings, and the tallest thing inside it (the
+     badge, which always out-measures the label). The card reserves this so its
+     text stops above the tray; deriving it here is the only way the two cannot
+     drift apart, and they had — the reservation was a hand-summed pair of badge
+     measures that came up ten pixels short and let the customer line run under
+     the pill. */
+  --tray-h:calc(max(6px,var(--s-tray) * .067) + 2 * max(5px,var(--s-tray) * .072)
+    + max(15px,var(--s-tray) * .145));
+  --tray-clear:calc(var(--tray-h) + max(4px,var(--s-tray) * .04))}
+.ev-tray{position:absolute;z-index:8;display:flex;
+  left:max(6px,calc(var(--s-tray) * .067));right:max(6px,calc(var(--s-tray) * .067));
+  bottom:calc(var(--cell-pad,0px) + max(6px,calc(var(--s-tray) * .067)));
+  gap:max(5px,calc(var(--s-tray) * .053))}
+.ev-cta{flex:1 1 auto;min-width:0;display:inline-flex;align-items:center;justify-content:center;
+  gap:max(5px,calc(var(--s-tray) * .05));
+  padding:max(5px,calc(var(--s-tray) * .072)) max(8px,calc(var(--s-tray) * .09));
+  border:0;border-radius:999px;cursor:pointer;transition:.12s;
+  background:var(--lime);color:#16181C;font:700 15px/1 var(--sans);letter-spacing:-.005em;
+  font-size:max(11px,calc(var(--s-tray) * .088));
+  box-shadow:0 3px 12px rgba(22,24,28,.2)}
+.ev-cta:hover{background:var(--lime-deep)}
+.ev-cta>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The badge is a hole punched in the pill, so the icon reads as part of the
+   button rather than as a second thing sitting on it. */
+.ev-cta>i{flex:none;display:grid;place-items:center;border-radius:50%;
+  width:max(15px,calc(var(--s-tray) * .145));height:max(15px,calc(var(--s-tray) * .145));
+  background:var(--paper);color:var(--ink)}
+/* `fill` in CSS overrides the icon's own fill="none" attribute, which filled
+   every stroke-drawn glyph solid and left its outline on top — two symbols in
+   one button. The ones that want a fill do not declare the attribute at all. */
+.ev-cta>i svg{width:max(9px,calc(var(--s-tray) * .075));height:max(9px,calc(var(--s-tray) * .075));
+  stroke:currentColor}
+.ev-cta>i svg:not([fill="none"]){fill:currentColor}
+/* A quiet action can never out-measure the one the card is asking for, however
+   long its label runs. */
+.ev-cta.is-quiet:not(:only-child){flex:0 1 auto;max-width:38%}
+/* Icon only: the badge is the whole button, so the pill closes around it. */
+.ev-cta.is-icon{flex:none;max-width:none;gap:0;
+  /* Wider padding than the labelled pill on purpose: the tray stretches every
+     button to the tallest one, so the icon button only reads as a circle if its
+     width lands on that same measure. */
+  padding:max(6px,calc(var(--s-tray) * .0835))}
+.ev-cta.is-icon>i{width:max(13px,calc(var(--s-tray) * .134));height:max(13px,calc(var(--s-tray) * .134))}
+.ev-cta.is-quiet{background:var(--chrome);color:#fff;box-shadow:none}
+.ev-cta.is-quiet:hover{background:var(--hold-btn)}
+.ev-cta.is-quiet>i{background:rgba(255,255,255,.16);color:#fff}
+.ev-cta.is-stop{background:var(--red);color:#fff}
+.ev-cta.is-stop:hover{background:var(--red-deep)}
+.ev-cta.is-stop>i{background:rgba(255,255,255,.2);color:#fff}
+.ev-cta.is-paper{background:var(--paper);color:var(--ink)}
+.ev-cta.is-paper>i{background:var(--fill-deep);color:#fff}
+/* ── the accent cannot be the fill ──
+   One lime action per card, and on a card that is itself lime the lime pill
+   disappears into it — the Check in button was the same colour as the booking
+   it sat on. There the action takes the ink instead and keeps the lime for its
+   badge, so the card still reads as an app booking and the button still reads
+   as the thing to press. */
+.schedule-cell:has(>.schedule-bub.via-app)>.ev-tray>.ev-cta:not(.is-quiet):not(.is-paper):not(.is-stop){
+  background:var(--fill-deep);color:#fff}
+.schedule-cell:has(>.schedule-bub.via-app)>.ev-tray>.ev-cta:not(.is-quiet):not(.is-paper):not(.is-stop):hover{
+  background:#000}
+.schedule-cell:has(>.schedule-bub.via-app)>.ev-tray>.ev-cta:not(.is-quiet):not(.is-paper):not(.is-stop)>i{
+  background:var(--lime);color:#16181C}
+/* A card wearing a tray keeps its composition clear of it rather than letting
+   the tray sit over the type. */
+.schedule-bub.has-tray{padding-bottom:var(--tray-clear)}
+/* The band bleeds to the card's bottom edge by a negative margin; with a tray
+   in that space it has to stop above it instead, so the negative bottom margin
+   goes and the bottom corners square off against the tray. */
+.schedule-bub.has-tray .ev-foot{margin-bottom:0;border-radius:0}
+.schedule-bub.has-tray .ev-face{padding:10px 12px 0}
+
+/* ═══════════════════════════════════════════════════════
+   THE RUNNING CARD — a live timer, not a schedule entry
+   Squat and black with its outline drawn as the countdown: the stroke is the
+   only moving thing on the board, so it carries the amber and everything else
+   on the card stays monochrome. Pause holds the left, end holds the right, the
+   clock owns the middle. Nothing else is on it.
+   ═══════════════════════════════════════════════════════ */
+/* Every measure on it is a ratio of the card's own height against the design
+   system's 130px reference — clock .338, alarm line and caption .115, the two
+   controls .43 with their glyphs at .169, and the clear space either side of
+   the clock .57. A two-row timer is the reference card at a smaller size, not a
+   separate design. The cqw cap keeps the controls off the clock in a narrow
+   column, and each floor holds legibility below that. */
+.schedule-bub.is-timer{background:var(--fill-deep);border-color:transparent;color:#fff;
+  border-radius:30px;padding:0;justify-content:center;align-items:center;gap:0;
+  box-shadow:0 6px 22px rgba(22,24,28,.28)}
+.schedule-bub.is-timer:hover{filter:none;box-shadow:0 8px 26px rgba(22,24,28,.32)}
+/* The two controls are a sibling of the card, not a child of it, so the scale
+   has to be stated on both or the buttons keep the reference size on a card
+   that has scaled down. Both sit inside the cell, which is the query container
+   the cqw cap measures. */
+.schedule-bub.is-timer,.schedule-cell[data-state="running"]>.tm-acts{
+  --tm:min(calc(var(--grid-span,2) * var(--schedule-row,44px) - 10px),54cqw)}
+.tm{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  width:100%;padding:0 max(40px,calc(var(--tm,130px) * .57));text-align:center;min-width:0}
+.schedule-bub.is-paused .tm-count{color:var(--d-body)}
+.tm-top{display:inline-flex;align-items:center;gap:max(4px,calc(var(--tm,130px) * .046));
+  font:700 max(9px,calc(var(--tm,130px) * .115))/1 var(--sans);color:var(--amber);
+  font-variant-numeric:tabular-nums}
+.tm-top svg{width:max(9px,calc(var(--tm,130px) * .1));height:max(9px,calc(var(--tm,130px) * .1));
+  fill:currentColor}
+.tm-count{margin:1px 0 0;font:800 max(22px,calc(var(--tm,130px) * .338))/1.05 var(--sans);
+  letter-spacing:-.03em;color:#fff;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+/* Seconds a size down and a shade back: they confirm the clock is moving, they
+   are not the number being read. */
+.tm-count i{font-style:normal;font-size:.44em;font-weight:600;letter-spacing:0;
+  color:var(--d-muted);opacity:.8;vertical-align:baseline}
+.tm-count.is-over{color:var(--red)}
+.tm-count.is-over i{color:var(--red);opacity:.7}
+.tm-sub{max-width:100%;font:500 max(11px,calc(var(--tm,130px) * .115))/1.2 var(--sans);color:var(--d-muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Thumb-sized, flanking, the way a phone timer places pause and stop. */
+.tm-acts{position:absolute;z-index:8;inset:0;display:flex;align-items:center;
+  justify-content:space-between;padding:0 max(8px,calc(var(--tm,130px) * .123));pointer-events:none}
+.tm-btn{width:max(30px,calc(var(--tm,130px) * .43));height:max(30px,calc(var(--tm,130px) * .43));
+  flex:none;display:grid;place-items:center;cursor:pointer;
+  pointer-events:auto;border:0;border-radius:50%;transition:.12s;
+  background:#33363B;color:#fff}
+.tm-btn svg{width:max(13px,calc(var(--tm,130px) * .169));height:max(13px,calc(var(--tm,130px) * .169));
+  stroke:currentColor}
+.tm-btn svg:not([fill="none"]){fill:currentColor}
+.tm-btn:hover{background:#3F4348}
+/* While paused, the alarm line's place is taken by the two controls that only
+   make sense stopped. Small, quiet, and in the type — they must not read as
+   equals of pause and end. */
+.tm-mini{display:inline-flex;gap:6px}
+.tm-mini button{padding:5px 11px;border:0;border-radius:999px;cursor:pointer;transition:.12s;
+  background:rgba(255,255,255,.11);color:var(--d-body);
+  font:700 11px/1 var(--disp);letter-spacing:.09em;text-transform:uppercase}
+.tm-mini button:hover{background:rgba(255,255,255,.22);color:#fff}
+.tm-btn.is-end{background:#4A1A16;color:var(--red)}
+.tm-btn.is-end:hover{background:var(--red);color:#fff}
+/* The outline is the countdown. It traces the card's own edge at the card's own
+   radius, so the card is the progress bar rather than carrying one. */
+.tm-ring{position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);
+  overflow:visible;pointer-events:none;z-index:6}
+.tm-ring rect{width:calc(100% - 6px);height:calc(100% - 6px);fill:none;stroke-width:6;stroke-linejoin:round}
+/* The track is the card's own fill, so what shows against the page is the amber
+   arc and nothing else. Written as --ink it followed the token to near-white in
+   dark mode and drew a fat white outline around every running card. */
+.tm-ring-track{stroke:var(--fill-deep);opacity:.9}
+.tm-ring-fill{stroke:var(--amber);stroke-linecap:round;transition:stroke-dasharray .9s linear}
+.is-paused .tm-ring-fill{stroke:var(--d-off);transition:none}
+.is-paused .tm-top{color:var(--d-muted)}
+.schedule-bub.is-timer.is-over .tm-ring-fill{stroke:var(--red);animation:evpulse 1.2s ease-in-out infinite}
+
+/* ═══════════════════════════════════════════════════════
+   BOOKING CARD, WIDE — the slot as one line of the day
+   The composition is the journey: the two ends of the session hold the outer
+   edges at the largest size on the card, the rail runs between them carrying
+   the marker, and the band along the bottom states the two facts that settle
+   it. Every measure below is a ratio of the card's height, so the card scales
+   without being re-tuned: radius .18h, side padding .15h, ends .27h, the small
+   type .11h, band .27h.
+   ═══════════════════════════════════════════════════════ */
+.bcard{--bc-fill:var(--lime);--h:130px;position:relative;display:flex;flex-direction:column;width:100%;
+  height:var(--h);padding:calc(var(--h) * .1) calc(var(--h) * .15) 0;
+  border:0;border-radius:calc(var(--h) * .18);cursor:pointer;overflow:hidden;text-align:left;
+  background:var(--lime);color:#16181C;transition:.14s;
+  box-shadow:0 2px 10px rgba(22,24,28,.1)}
+.bcard:hover{box-shadow:0 8px 24px rgba(22,24,28,.18)}
+/* The top line names the slot on the left and states its clock on the right. */
+/* The ratios hold down to the hour card and no further: below it they would put
+   the small type under 10px, which is a floor no proportion argument wins. Each
+   small role therefore states its own minimum, and the card stops scaling its
+   type before it stops scaling its box. */
+.bcard-top{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  font:700 max(10.5px,calc(var(--h) * .112))/1 var(--sans);letter-spacing:-.005em}
+.bcard-top span{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bcard-top span:last-child{flex:none}
+.bcard-top span:first-child{flex:1 1 auto;font-family:var(--disp);font-size:max(11.5px,calc(var(--h) * .125));
+  letter-spacing:.06em;text-transform:uppercase;opacity:.62}
+.bcard-top span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums}
+/* The ends and the rail between them. */
+.bcard-run{display:flex;align-items:center;gap:calc(var(--h) * .1);
+  margin-top:calc(var(--h) * .015);min-width:0}
+.bcard-run b{flex:none;font:800 max(22px,calc(var(--h) * .27))/1 var(--sans);letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.bcard-rail{position:relative;flex:1 1 auto;min-width:20px;height:calc(var(--h) * .1);
+  display:flex;align-items:center}
+.bcard-rail::before{content:"";position:absolute;left:5px;right:9px;height:0;
+  border-top:2px dashed currentColor;opacity:.4}
+.bcard-rail i{position:absolute;left:0;width:7px;height:7px;border-radius:50%;background:currentColor}
+/* The target end is a ring, not a dot: it is where the session is going. */
+.bcard-rail i.is-target{left:auto;right:0;width:15px;height:15px;background:none;
+  box-shadow:inset 0 0 0 2px currentColor;opacity:.55}
+.bcard-rail i.is-target::after{content:"";position:absolute;inset:4px;border-radius:50%;background:currentColor}
+/* The marker rides the rail at the session's progress. */
+.bcard-rail em{position:absolute;top:50%;left:50%;translate:-50% -50%;padding:0 calc(var(--h) * .055);
+  border-radius:999px;background:currentColor;
+  font:700 max(9px,calc(var(--h) * .095))/max(18px,calc(var(--h) * .19)) var(--disp);letter-spacing:.07em;
+  text-transform:uppercase;font-style:normal;white-space:nowrap}
+/* The marker's text knocks out to the card's OWN fill, so each kind states that
+   fill once as --bc-fill and the knock-out follows it into any theme. Reading
+   the fill off a colour token instead (lime here, --ink for the counter) breaks
+   the moment a theme changes either one. */
+.bcard-rail em span{color:var(--bc-fill,var(--lime))}
+/* The band is a wash of the card's own ink over its own fill, bled to all three
+   edges and holding the bottom radius, so it is a section of the card. */
+.bcard-band{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+  margin:auto calc(var(--h) * -.15) 0;padding:0 calc(var(--h) * .15);
+  height:calc(var(--h) * .27);
+  background:var(--bc-band,rgba(22,24,28,.1));box-shadow:inset 0 1px 0 rgba(22,24,28,.06);
+  font:700 max(10.5px,calc(var(--h) * .112))/calc(var(--h) * .27) var(--sans);letter-spacing:-.005em}
+.bcard-band span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bcard-band span:last-child{flex:none;font-variant-numeric:tabular-nums}
+/* ── the kinds ──
+   Fill carries who booked it; the band always washes the card's own fill. */
+.bcard.is-counter{background:var(--fill-deep);color:#fff;--bc-band:rgba(255,255,255,.1);--bc-fill:var(--fill-deep)}
+.bcard.is-counter .bcard-band{box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.bcard.is-open{--bc-fill:var(--fill-open);background:var(--fill-open);box-shadow:inset 0 0 0 1.5px var(--lime-deep),0 2px 10px rgba(22,24,28,.06)}
+.bcard.is-hold{background:var(--lime-tint);color:var(--lime-txt3);--bc-band:rgba(107,122,46,.13);--bc-fill:var(--lime-tint)}
+.bcard.is-blocked{background:var(--fill-blocked);color:var(--muted2);--bc-band:rgba(22,24,28,.05);--bc-fill:var(--fill-blocked)}
+.bcard.is-blocked .bcard-run b{text-decoration:line-through}
+/* ── unpaid ──
+   Every other kind states what it is with a fill. This one states that
+   something is wrong, and a wash of coral reads calm at exactly the moment it
+   should not. So the card goes dark and takes a red outline instead: on a pale
+   board of lime and paper cards it is the only black-and-red object, visible
+   from across the room without shouting a colour. The tag names the problem,
+   the amount owed is the only red text, and the rail dims because the session
+   is over — the money is the live part now. */
+.bcard.is-owing{background:#BE3B2E;color:#fff;--bc-band:rgba(0,0,0,.28);
+  background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.05) 0 16px,transparent 16px 34px);
+  box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 8px 26px rgba(190,59,46,.36);
+  animation:owedbreathe 2.2s ease-in-out infinite}
+/* The card breathes, but only in its own glow: an outline that grows outward
+   would climb over whatever sits above it in the column. */
+@keyframes owedbreathe{0%,100%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 8px 26px rgba(190,59,46,.3)}
+  50%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.9),0 8px 26px rgba(190,59,46,.6)}}
+/* The tag becomes a white plate — the one label in the system that inverts. */
+.bcard.is-owing .bcard-top span:first-child{flex:none;overflow:visible;padding:0 calc(var(--h) * .06);
+  border-radius:999px;background:#fff;color:#A82E22;opacity:1;letter-spacing:.09em}
+/* The band is hazard-striped: the one texture in the system, and it belongs to
+   the one card that is a problem rather than a booking. */
+.bcard.is-owing .bcard-band{box-shadow:inset 0 1px 0 rgba(0,0,0,.24);
+  background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.11) 0 9px,transparent 9px 19px)}
+.bcard.is-owing .bcard-band span:last-child{color:#fff}
+/* The rail dims, but the marker on it does not — dimming the whole rail took
+   the white chip down with it. */
+.bcard.is-owing .bcard-rail::before{opacity:.28}
+.bcard.is-owing .bcard-rail i{opacity:.45}
+.bcard.is-owing .bcard-rail em{background:#fff}
+.bcard.is-owing{--bc-fill:#BE3B2E}
+/* The one animated thing in the system: a card holding money moves, slightly,
+   until somebody deals with it. */
+.bcard.is-owing::after{content:"";position:absolute;top:calc(var(--h) * .12);
+  right:calc(var(--h) * .15);width:8px;height:8px;border-radius:50%;background:#fff;
+  animation:owedpulse 2s ease-out infinite}
+@keyframes owedpulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.6)}70%{box-shadow:0 0 0 9px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
+
+/* ═══════════════════════════════════════════════════════
+   DARK MODE — [data-theme="dark"]
+   The same system with the page turned off. Two rules carry it: surfaces are
+   near-black greys that step by lightness only (no tint, no borders doing the
+   work of a surface), and the lime stays exactly as it is — it is the one thing
+   on the screen with a colour, so it does the same job in either theme. The
+   token names keep their meaning: --paper is still "the surface a card sits
+   on", it is just no longer white; --ink is still "the strongest text".
+   ═══════════════════════════════════════════════════════ */
+[data-theme="dark"]{
+  --ink:#F4F5F3;            /* now the strongest TEXT, not the darkest fill */
+  --paper:#232323;          /* raised surface */
+  --soft:#1B1B1B;           /* recessed surface */
+  --soft2:#1E1E1E;
+  --edge:#2C2C2C;
+  --edge2:#303030;
+  --edge3:#3C3C3C;
+  --rule:#282828;
+  --body:#BDC0C2;
+  --muted:#8D9195;
+  --muted2:#7C8085;
+  --chrome:#2E2E2E;
+  --field:#242424;
+  --hold-btn:#3A3A3A;
+  --d-muted:#8D9195;
+  --d-body:#BDC0C2;
+  --d-off:#4A4A4A;
+  --lime-pale:#232B14;      /* the pale lime surfaces become tinted darks */
+  --lime-tint:#2D3818;
+  --lime-tint2:#2A3416;
+  --lime-txt:#C4E24A;
+  --lime-txt3:#B9D653;
+  --red-pale:#2A1412;
+  --red-row:#241110;
+  --amber-bg:#33260B;
+  --amber-pale:#241B08;
+  --amber-txt:#E8B94A;
+  --amber-txt2:#D9AE4A;
+  --blue-bg:#101A2A;        /* surfaces the first dark pass missed: both are */
+  --blue-pale:#1B2C48;      /* pale plates, and stayed pale on a dark page   */
+  --blue-deep:#9FC2FF;      /* so its text has to come up as they go down    */
+  --page:#131313;
+  --fill-deep:#0D0D0D;
+  --fill-open:#1F2612;
+  --fill-blocked:#1C1C1C;
+  /* the band + seam washes a card's own fill takes in this theme */
+  --band-wash:rgba(255,255,255,.07);
+  --seam-wash:rgba(255,255,255,.06);
+  --band-wash-quiet:rgba(255,255,255,.05);
+  --seam-wash-quiet:rgba(255,255,255,.04);
+  color-scheme:dark;
+}
+[data-theme="dark"] body{background:var(--page);color:var(--ink)}
+[data-theme="dark"] .boardbar{background:var(--page)}
+/* ── the fills that were "ink" ──
+   A handful of rules use --ink as a dark FILL rather than as text. Those cannot
+   follow the token when it flips to near-white, so they are restated here as
+   the theme's own deepest surface. */
+[data-theme="dark"] .panel{box-shadow:0 8px 30px rgba(0,0,0,.5)}
+[data-theme="dark"] .chip[aria-pressed="true"],
+[data-theme="dark"] .seg button[aria-pressed="true"]{background:var(--lime);border-color:var(--lime);color:#111}
+[data-theme="dark"] .seg button.is-past[aria-pressed="true"]{background:#3C3C3C;border-color:#3C3C3C;color:#fff}
+[data-theme="dark"] .chip{background:var(--paper);border-color:var(--edge3);color:var(--body)}
+[data-theme="dark"] .bcard{box-shadow:0 2px 12px rgba(0,0,0,.45)}
+[data-theme="dark"] .bcard.is-open{box-shadow:inset 0 0 0 1.5px var(--lime-deep),0 2px 12px rgba(0,0,0,.45)}
+[data-theme="dark"] .bcard.is-blocked{color:#7C8085;box-shadow:inset 0 0 0 1px var(--edge2),0 2px 12px rgba(0,0,0,.4)}
+[data-theme="dark"] .rowcard.is-done{background:#1B1B1B;color:var(--muted2);box-shadow:inset 0 0 0 1px #2A2A2A}
+[data-theme="dark"] .rowcard.is-done .bar{background:#333}
+[data-theme="dark"] .strip{background:#1B1B1B}
+[data-theme="dark"] .strip-bar{background:#262626}
+[data-theme="dark"] .strip-bar i.is-live{background:var(--lime);box-shadow:0 0 0 2px #1B1B1B}
+[data-theme="dark"] .strip-now::before,[data-theme="dark"] .strip-now{background:var(--red)}
+[data-theme="dark"] .tok{background:var(--paper);border-color:var(--edge2)}
+/* Lime keeps its own contrast pair in both themes: black type on lime, always.
+   --ink is text-white in this theme, so every lime-filled element has to state
+   its own foreground rather than inherit one. */
+[data-theme="dark"] .btn.is-go,[data-theme="dark"] .ev-cta,[data-theme="dark"] .pill{color:#111}
+[data-theme="dark"] .bcard,[data-theme="dark"] .bub.via-app,[data-theme="dark"] .listrow.is-accent{color:#16181C}
+[data-theme="dark"] .listrow.is-accent .listrow-main span,
+[data-theme="dark"] .listrow.is-accent .listrow-val small{color:rgba(22,24,28,.62)}
+[data-theme="dark"] .listrow.is-accent .listrow-slot{background:rgba(22,24,28,.14);color:#16181C}
+[data-theme="dark"] .bcard.is-open{color:var(--ink)}
+[data-theme="dark"] .bcard.is-hold{color:var(--lime-txt3)}
+[data-theme="dark"] .bcard.is-blocked{color:#7C8085}
+[data-theme="dark"] .bcard.is-owing,[data-theme="dark"] .bcard.is-counter{color:#fff}
+[data-theme="dark"] .pill.is-quiet{background:#2E2E2E;color:var(--d-body)}
+[data-theme="dark"] .pill.is-pale{background:#262626;color:var(--body)}
+[data-theme="dark"] .ev-cta.is-quiet{background:#2E2E2E;color:#fff}
+[data-theme="dark"] .ev-cta.is-paper{background:#F4F5F3;color:#111}
+[data-theme="dark"] .ev-act.is-quiet{background:transparent;border-color:var(--edge3);color:var(--body)}
+/* The schedule card's paper-fill states become the theme's raised surface. */
+/* Only the paper-filled pills follow the theme. A card whose fill IS its kind —
+   lime for the app, ink for the counter, tinted for a hold — keeps that fill in
+   both themes; without this exclusion the rule ties on specificity with the
+   kinds and, being later, quietly repaints them all grey. The list sits inside
+   :where() so it contributes no specificity of its own — a bare :not() chain
+   would raise this rule's weight and start beating the kind rules it is meant
+   to step aside for. */
+[data-theme="dark"] .bub:not(:where(.via-app,.counter,.hold,.blocked,.schedule-open)){
+  background:var(--paper);border-color:var(--edge2);color:var(--ink)}
+[data-theme="dark"] .bub.part{background:var(--paper);border-color:var(--ink)}
+[data-theme="dark"] .schedule-open.partial{background:#1C1C1C;border-color:var(--edge3);color:var(--body)}
+[data-theme="dark"] .bub.blocked{border-color:var(--edge2);color:var(--muted)}
+
+/* ── list rows ──
+   A row of the same shape as the pills around it: fully rounded, a circular
+   slot for the thing's icon, the name and its one line of context, and the
+   number it is being measured by on the right. Nothing is boxed and nothing is
+   ruled — the surface itself separates the rows. */
+.listrow{display:flex;align-items:center;gap:14px;width:100%;padding:12px 20px 12px 12px;
+  border:0;border-radius:999px;cursor:pointer;text-align:left;transition:.12s;
+  background:var(--paper);color:var(--ink);box-shadow:inset 0 0 0 1px var(--edge2)}
+.listrow:hover{background:color-mix(in srgb,var(--paper) 88%,var(--ink))}
+.listrow-slot{width:52px;height:52px;flex:none;display:grid;place-items:center;border-radius:50%;
+  background:color-mix(in srgb,var(--paper) 84%,var(--ink));color:var(--body)}
+.listrow-slot svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8}
+.listrow-main{flex:1 1 auto;min-width:0}
+.listrow-main b{display:block;font:600 17px/1.25 var(--sans);letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.listrow-main span{display:block;font:500 13px/1.3 var(--sans);color:var(--muted)}
+.listrow-val{flex:none;font:700 21px/1 var(--sans);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.listrow-val small{font:600 13px/1 var(--sans);color:var(--muted);margin-left:3px}
+.listrow.is-accent{background:var(--lime);color:#16181C;box-shadow:none}
+.listrow.is-accent .listrow-slot{background:rgba(22,24,28,.14);color:var(--ink)}
+.listrow.is-accent .listrow-main span,.listrow.is-accent .listrow-val small{color:rgba(22,24,28,.62)}
+.rowlist{display:flex;flex-direction:column;gap:10px}
+/* ── the bar ──
+   Circular targets on the page's own surface, the current one in lime. */
+.navbar{display:inline-flex;align-items:center;gap:10px;padding:10px;border-radius:999px;
+  background:color-mix(in srgb,var(--paper) 90%,var(--ink))}
+.navbar button{width:52px;height:52px;flex:none;display:grid;place-items:center;cursor:pointer;
+  border:0;border-radius:50%;transition:.12s;background:color-mix(in srgb,var(--paper) 78%,var(--ink));
+  color:var(--body)}
+.navbar button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9}
+.navbar button:hover{color:var(--ink)}
+.navbar button[aria-current="page"]{background:var(--lime);color:#111}
 .chip.big{height:38px;padding:0 20px}
-.chip.on{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:none}
+.chip.on{background:var(--fill-deep);color:#fff;border-color:var(--ink);box-shadow:none}
 
 .rbtn{width:38px;height:38px;border-radius:50%;background:var(--paper);border:1.5px solid var(--edge3);
   cursor:pointer;display:grid;place-items:center;box-shadow:0 1px 2px rgba(20,30,15,.07);
   font:700 15px var(--sans);color:var(--ink)}
 
-.pillbtn{height:38px;padding:0 15px;border-radius:999px;border:0;cursor:pointer;background:var(--ink);
+.pillbtn{height:38px;padding:0 15px;border-radius:999px;border:0;cursor:pointer;background:var(--fill-deep);
   color:var(--lime);font:700 13px var(--sans);white-space:nowrap}
 .pillbtn.secondary{background:var(--paper);color:var(--ink);border:1.5px solid var(--edge3)}
 
@@ -134,19 +1216,30 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .tag.booked{background:var(--lime-tint2);color:var(--lime-txt)}
 .tag.hold{background:var(--lime-pale);color:var(--lime-txt3)}
 .tag.blocked{background:var(--soft);color:var(--muted)}
-.tag.ondark{background:var(--lime);color:var(--ink)}
+.tag.ondark{background:var(--lime);color:#16181C}
 
 /* segmented options — one row of equal-width choices */
 .seg-opt{flex:1;min-width:0;height:36px;border-radius:12px;border:0;cursor:pointer;padding:0 5px;
   font:600 11.5px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   background:var(--soft);color:var(--body)}
-.seg-opt.on{font-weight:700;background:var(--ink);color:#fff}
+.seg-opt.on{font-weight:700;background:var(--fill-deep);color:#fff}
 .seg-opt.dark{background:var(--chrome);color:var(--d-muted)}
-.seg-opt.dark.on{background:#fff;color:var(--ink)}
-
-/* ─── dark panels (aside + dialogs) ───────────────────── */
-.panel{background:var(--ink);color:#fff;border-radius:26px;padding:20px}
-.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.seg-opt.dark.on{background:#fff;color:#16181C}
+/* ── the timer dialog's two presets ──
+   Each states what it means and the minute it would use, so the choice is read
+   rather than worked out. The segmented control the other dialogs use, opened
+   up to hold two lines — a button is not a flex container by default, so the
+   display has to be stated here or the label and the time sit on one line and
+   clip. */
+.timeropt{flex:1;min-width:0;height:auto;display:flex;flex-direction:column;align-items:flex-start;
+  gap:3px;padding:11px 12px;border-radius:14px;text-align:left}
+.timeropt.is-off{opacity:.4;cursor:not-allowed}
+.timeropt b{font:700 12.5px var(--sans);letter-spacing:0}
+.timeropt i{font:700 15px var(--disp);font-style:normal;letter-spacing:0;font-variant-numeric:tabular-nums}
+.timernow{flex:1;min-width:0;height:40px;display:flex;align-items:center;justify-content:center;
+  border-radius:13px;background:var(--field);color:var(--ink);
+  font:700 15px var(--disp);font-variant-numeric:tabular-nums}
+.dbtn.timerstep{flex:none;width:52px;height:40px;border-radius:13px;font-size:15px}
 .panel-title{font:700 26px/1 var(--disp)}
 .x{width:32px;height:32px;border-radius:50%;background:var(--chrome);color:#fff;border:0;cursor:pointer;
   font:700 15px var(--sans);display:grid;place-items:center}
@@ -167,7 +1260,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .dbtn{flex:1;height:52px;border-radius:20px;background:var(--chrome);color:#fff;border:0;cursor:pointer;
   font:700 14.5px var(--sans)}
 .dbtn:disabled{cursor:not-allowed;opacity:.42}
-.dbtn.primary{flex:2;background:var(--lime);color:var(--ink)}
+.dbtn.primary{flex:2;background:var(--lime);color:#16181C}
 .dbtn.wide{width:100%;flex:none}
 .dbtn.sm{height:50px;border-radius:17px;font-size:14px}
 .dbtn.xs{height:48px;border-radius:16px;font:700 14px var(--sans)}
@@ -176,7 +1269,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .optrow.wide{gap:7px}
 
 /* the lime confirmation plate every dialog leads with */
-.plate{background:var(--lime);color:var(--ink);border-radius:22px;padding:18px 20px;margin-top:14px}
+.plate{background:var(--lime);color:#16181C;border-radius:22px;padding:18px 20px;margin-top:14px}
 .plate-kicker{font:700 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;opacity:.65}
 .plate-time{font:700 46px/1 var(--disp);letter-spacing:-.5px;margin-top:8px}
 .plate-dur{font:700 12px var(--sans);letter-spacing:.06em;text-transform:uppercase;margin-top:4px;opacity:.72}
@@ -191,7 +1284,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .backdrop.top{z-index:42}
 /* Every dialog caps its height and scrolls inside — a tall one used to run
    off the top and bottom of a short window, hiding its own close button. */
-.modal{width:100%;max-width:400px;background:var(--ink);color:#fff;border-radius:28px;padding:24px;
+.modal{width:100%;max-width:400px;background:var(--fill-deep);color:#fff;border-radius:28px;padding:24px;
   max-height:88vh;overflow-y:auto}
 .modal.wide{max-width:430px}
 
@@ -213,12 +1306,58 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .stack{display:flex;flex-direction:column;gap:8px;margin-top:16px}
 
 /* ─── availability ────────────────────────────────────── */
-.avail{display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:16px;padding:20px 18px 40px;align-items:start}
+.avail{--bar-h:60px;display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:16px;padding:20px 18px 40px;align-items:start}
 .avail-main{display:flex;flex-direction:column;gap:16px;min-width:0}
 /* The whole control row stays on one line. Nothing here wraps: the title and
    the fixed controls hold their size, and the pitch picker is the one elastic
    item — it scrolls sideways rather than pushing anything to a second row, so
    the row survives a fourth or fifth pitch being added. */
+/* ── the board bar ──
+   Where you are in time, the days you can reach, and the shape of the board —
+   one row, in that order, so the eye crosses it left to right and lands on the
+   grid. It replaces a page title, a colour legend and a second nav row that
+   between them cost about 150px of the board's height and said nothing the
+   board was not already saying. */
+/* The bar states which day you are looking at, so it has to survive the scroll
+   that takes you away from the top of that day — otherwise you are reading a
+   board with no date on it. It parks under the topbar, and the column heads
+   park under the bar. */
+.boardbar{display:flex;align-items:center;gap:12px;flex-wrap:nowrap;
+  position:sticky;top:70px;z-index:4;padding:8px 0;background:var(--soft)}
+.boardbar-lead{display:flex;align-items:center;gap:8px;flex:none}
+.boardbar-end{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none}
+.boardbar .dayjump{display:flex;align-items:center;gap:4px;flex-wrap:nowrap;min-width:0;flex:1 1 auto;
+  overflow-x:auto;scrollbar-width:none;background:var(--paper);border:1.5px solid var(--edge);
+  border-radius:999px;padding:4px}
+.boardbar .dayjump::-webkit-scrollbar{display:none}
+.boardbar .jchip{flex:none}
+.rbtn.round{width:38px;height:38px;border-radius:50%;padding:0;display:grid;place-items:center}
+/* The date is the one control here that states a value as well as taking a
+   click, so it is the only one built as a field: the whole pill is the picker. */
+.daypill{position:relative;display:flex;align-items:center;gap:9px;height:44px;padding:0 14px;
+  border-radius:999px;background:var(--paper);border:1.5px solid var(--edge3);cursor:pointer;white-space:nowrap}
+.daypill.is-static{cursor:default}
+.daypill-ico{display:grid;place-items:center;color:var(--muted2);flex:none}
+.daypill-chev{display:grid;place-items:center;color:var(--muted2);flex:none}
+.daypill-txt{display:flex;flex-direction:column;gap:1px;line-height:1}
+.daypill-txt b{font:700 13.5px var(--sans);letter-spacing:-.1px}
+.daypill-txt span{font:500 11px var(--sans);color:var(--body)}
+.daypill input[type=date]{position:absolute;inset:0;opacity:0;cursor:pointer;border:0;padding:0}
+.daypill:focus-within{border-color:var(--ink)}
+/* ── column heads ──
+   The name and the count read left, the ring states the same load the aside
+   lists — three arcs side by side answer "which pitch is busy" before any of
+   the three numbers have been read. */
+.pitchcol-txt{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left}
+.pdonut{flex:none}
+.pdonut-t{font:700 9px var(--sans);fill:var(--body)}
+.pitchcol.on .pdonut-t{fill:#fff}
+.pitchcol.on .pdonut circle:first-child{stroke:rgba(255,255,255,.22)}
+/* The aside closes with the count the legend used to carry, kept as a line of
+   text because it is read once and then ignored. */
+.asidenote{display:flex;align-items:center;gap:8px;padding:0 4px;color:var(--body);
+  font:500 11.5px/1.4 var(--sans)}
+.asidenote svg{flex:none;color:var(--muted2)}
 .headrow{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:nowrap}
 /* The mode toggle is anchored to the title, not to the right-hand tools —
    the tools change between modes, so a toggle living there would slide
@@ -227,24 +1366,22 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
    constant and the toggle holds position without a padded min-width. */
 .headrow-lead{display:flex;align-items:flex-end;gap:16px;min-width:0;flex:1 1 auto;flex-wrap:nowrap}
 .headrow-title{flex:none}
-.headrow-tools{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;flex:none}
 .pitchpicker{display:flex;gap:6px;min-width:0;flex:1 1 auto;overflow-x:auto;
   scrollbar-width:none;padding-bottom:1px}
 .pitchpicker::-webkit-scrollbar{display:none}
 .pitchpicker .chip{flex:none}
-.nudge{display:flex;gap:5px;flex:none}
 .pillbtn{flex:none}
+.headrow-acct{display:flex;align-items:center;gap:8px;flex:none}
 .modeseg{display:inline-flex;background:var(--paper);border:1.5px solid var(--edge3);border-radius:999px;
   padding:3px;gap:3px;box-shadow:0 1px 2px rgba(20,30,15,.07);flex:none}
 .modeopt{height:32px;padding:0 13px;border-radius:999px;border:0;cursor:pointer;white-space:nowrap;
   font:600 12.5px var(--sans);background:transparent;color:var(--body)}
-.modeopt.on{background:var(--ink);color:#fff;font-weight:700}
-
-.legend{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:13px 18px;background:var(--paper);
-  border:1px solid var(--edge);border-radius:24px}
-.legend span{display:inline-flex;align-items:center;gap:8px;font:600 12.5px var(--sans)}
-.legend i{display:inline-block;width:16px;height:16px;border-radius:6px}
-.legend .fill{margin-left:auto;font:500 12.5px var(--sans);color:var(--muted)}
+.modeopt.on{background:var(--fill-deep);color:#fff;font-weight:700}
+/* An icon option is square: nothing to read, so nothing to set a width. */
+.modeopt.is-ico{width:32px;height:32px;padding:0;display:grid;place-items:center;color:var(--muted2)}
+.modeopt.is-ico:hover:not(.on){color:var(--ink)}
+.modeopt.is-ico.on{color:#fff}
+.modeopt.is-ico svg{display:block}
 
 /* The week grid — a solid field in the selected pitch's colour. */
 .gridcard{background:var(--tint-bg);border:1px solid var(--tint-line);border-radius:26px;padding:14px;
@@ -260,7 +1397,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
    share one sticky wrapper rather than each carrying its own offset — that way
    a chip row wrapping to a second line can't leave a gap or overlap beneath.
    The topbar is 70px, so the block parks directly under it. */
-.gridsticky{position:sticky;top:70px;z-index:3;background:var(--tint-bg);
+.gridsticky{position:sticky;top:calc(70px + var(--bar-h,0px));z-index:3;background:var(--tint-bg);
   margin:0 -14px;padding:0 14px;
   box-shadow:0 8px 10px -10px rgba(22,24,28,.35)}
 
@@ -277,25 +1414,17 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
    which pitch, so the row is just the switcher plus its summary. */
 .gridtop .pitchpicker{padding:10px 0;flex:0 1 auto}
 .grid-soft.push{margin-left:auto}
-.gridtop > .gridcard-head{flex:1 1 100%}
-.gridsticky.stuck .gridtop > .gridcard-head{flex:0 0 auto;padding:6px 0}
-/* the open-slot count is already stated in the legend above — drop the echo
-   to buy the width the chips need */
-.gridsticky.stuck .gridcard-head .grid-soft{display:none}
 .gridsticky.stuck .dayjump,.gridsticky.stuck .pitchpicker{flex:1 1 auto;min-width:0;
   flex-wrap:nowrap;overflow-x:auto;justify-content:flex-end;padding:6px 0;
   scrollbar-width:none}
 .gridsticky.stuck .dayjump::-webkit-scrollbar,
 .gridsticky.stuck .pitchpicker::-webkit-scrollbar{display:none}
 .gridsticky.stuck .jchip,.gridsticky.stuck .pitchpicker .chip{flex:none}
-/* Date folds from two stacked lines onto one — still fully legible. */
-.gridsticky.stuck .daynav-now{display:flex;align-items:baseline;gap:7px}
-.gridsticky.stuck .daynav-now b{font-size:16px}
-.gridsticky.stuck .daynav-now span{margin-top:0;font-size:11px}
 .gridsticky.stuck .rbtn.sm{width:27px;height:27px;font-size:12px}
 .gridsticky.stuck .pitchstrip,.gridsticky.stuck .daystrip{padding:6px 0 8px}
 .gridsticky.stuck .pitchcol{padding:5px 8px}
-.gridsticky.stuck .pitchcol span:not(.open){display:none}
+.gridsticky.stuck .pitchcol .open{display:none}
+.gridsticky.stuck .pdonut{width:27px;height:27px}
 .gridsticky.stuck .dayhead{padding:5px 6px}
 .gridsticky.stuck .dayhead .mon{display:none}
 .gridsticky.stuck .dayload{display:none}
@@ -307,7 +1436,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   border:1px solid var(--edge);display:block;width:100%;cursor:pointer;font:inherit}
 button.dayhead:hover{border-color:var(--edge3)}
 button.dayhead:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.dayhead.today{background:var(--ink);color:#fff;border-color:var(--ink)}
+.dayhead.today{background:var(--fill-deep);color:#fff;border-color:var(--ink)}
 .dayhead small{display:block;font:600 10.5px var(--sans);text-transform:uppercase;letter-spacing:.06em;opacity:.62}
 .dayhead b{display:block;font:700 19px var(--sans);margin-top:1px}
 .dayhead .mon{display:block;font:500 10.5px var(--sans);opacity:.6;margin-top:1px;text-transform:none;letter-spacing:0}
@@ -335,7 +1464,7 @@ button.dayhead:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .band-name{font:700 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--tint-fg)}
 .band-rule{flex:1;height:1px;display:block;background:var(--tint-soft);opacity:.35}
 .band-span{font:600 10.5px var(--sans);color:var(--tint-soft);flex:none}
-.bandrow{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:6px}
+.bandrow{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px;margin-bottom:9px}
 
 /* ── day view: one date, pitches as columns ── */
 /* The day card is always paper, whatever the pitch colours are set to — but it
@@ -345,15 +1474,12 @@ button.dayhead:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   --tint-soft:var(--muted);--tint-chip:var(--soft);--tint-chip-fg:var(--ink);
   background:var(--paper);border-color:var(--edge);color:var(--ink)}
 .daycard .grid-soft.dark{color:var(--muted)}
-.daynav{display:flex;align-items:center;gap:10px}
-.daynav-now b{display:block;font:700 20px/1 var(--disp);letter-spacing:-.2px}
-.daynav-now span{display:block;font:600 11.5px var(--sans);color:var(--muted);margin-top:2px}
 .rbtn.sm{width:32px;height:32px;font-size:13px}
 .dayjump{display:flex;gap:6px;flex-wrap:wrap;padding:12px 0 2px}
 .jchip{height:30px;padding:0 12px;border-radius:999px;cursor:pointer;white-space:nowrap;
   font:600 12px var(--sans);background:var(--soft2);color:var(--body);border:1px solid var(--edge)}
 .jchip:hover{border-color:var(--edge3);color:var(--ink)}
-.jchip.on{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700}
+.jchip.on{background:var(--fill-deep);color:#fff;border-color:var(--ink);font-weight:700}
 /* Anything beyond the eight quick chips. The native date input is laid over
    the whole chip and its picker indicator stretched to match, so a click
    anywhere opens the OS calendar — no bespoke date UI to maintain. */
@@ -367,15 +1493,18 @@ button.dayhead:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .jdate:hover{border-color:var(--edge3);color:var(--ink)}
 .pitchstrip{display:grid;grid-template-columns:72px repeat(var(--cols),minmax(0,1fr));gap:6px;
   padding:10px 0 12px;align-items:end}
-.pitchcol{border-radius:16px;padding:9px 8px;text-align:center;background:var(--soft2);
-  border:1px solid var(--edge);min-width:0;display:block;width:100%;cursor:pointer;font:inherit;
-  border-top:3px solid var(--col-accent,var(--edge3))}
+.pitchcol{border-radius:16px;padding:9px 12px;text-align:left;background:var(--soft2);
+  border:1px solid var(--edge);min-width:0;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;width:100%;cursor:pointer;font:inherit;border-top:3px solid var(--col-accent,var(--edge3))}
 button.pitchcol:hover{border-color:var(--edge3)}
 button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.pitchcol.on{background:var(--ink);color:#fff;border-color:var(--ink);
+.pitchcol.on{background:var(--fill-deep);color:#fff;border-color:var(--ink);
   border-top-color:var(--col-accent,var(--lime))}
 .pitchcol b{display:block;font:700 14px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pitchcol span{display:block;font:500 10.5px var(--sans);opacity:.66;margin-top:1px}
+/* This was ".pitchcol span", which also matched the .pitchcol-txt wrapper that
+   the name and count were later moved into - overriding its display:flex and
+   dimming the whole header to 66%. Only the side label wants this. */
+.pitchcol .side{display:block;font:500 10.5px var(--sans);opacity:.66;margin-top:1px}
 .pitchcol .open{font:700 10px var(--sans);letter-spacing:.06em;text-transform:uppercase;opacity:.9;margin-top:3px}
 .daycard .bandrow{grid-template-columns:72px repeat(var(--cols),minmax(0,1fr))}
 .hourlbl{position:relative;display:flex;align-items:center;justify-content:center;
@@ -394,61 +1523,100 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   border-radius:6px;background:var(--paper);color:var(--red-deep);transform:translateY(-50%);
   text-align:right;font:700 10px/1 var(--sans);font-variant-numeric:tabular-nums;white-space:nowrap}
 .bandrow.has-now .hourtxt{opacity:0}
-
-/* the time bubbles */
-.bub{position:relative;display:flex;align-items:center;justify-content:center;height:38px;flex:none;width:100%;padding:0 4px;
-  cursor:pointer;white-space:nowrap;overflow:hidden;text-align:center;font:800 13px var(--sans);letter-spacing:0;
-  font-variant-numeric:tabular-nums;border-radius:15px;
-  transition:.12s;border:1px solid var(--edge2);background:var(--paper);color:var(--ink)}
-.bub.via-app{background:var(--lime);border-color:var(--lime-deep);color:var(--ink)}
-.bub.counter{background:var(--ink);border-color:var(--ink);color:#fff}
-.bub-time{display:block;align-self:center;width:fit-content;max-width:100%;margin-inline:auto;
-  overflow:hidden;text-overflow:ellipsis;line-height:1;text-align:center}
-.bub-indicator{position:absolute;z-index:2;top:3px;right:4px;display:inline-flex;align-items:center;
-  justify-content:center;min-width:28px;max-width:calc(100% - 8px);min-height:12px;padding:1px 5px;
-  overflow:hidden;text-overflow:ellipsis;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;
-  font:700 8px/1 var(--sans);letter-spacing:.04em;text-decoration:none}
-.bub.via-app .bub-indicator{background:rgba(255,255,255,.74);color:var(--ink)}
-.bub.part .bub-indicator{background:var(--ink);color:#fff}
-.bub.hold{background:var(--lime-tint);border-color:var(--lime-tint);color:var(--lime-txt3)}
-.bub.hold .bub-indicator{background:rgba(107,122,46,.14);color:var(--lime-txt3)}
-.bub.blocked{background:var(--soft);border-color:var(--soft);color:var(--muted2)}
-.bub.blocked>.bub-time{text-decoration:line-through}
-.bub.blocked .bub-indicator{background:var(--paper);color:var(--body);box-shadow:0 0 0 1px var(--edge2)}
-.bub.part{background:var(--paper);border-color:var(--ink);color:var(--ink);position:relative}
-.bub.sel{box-shadow:0 0 0 2px var(--ink)}
-.bub .ovl{position:absolute;inset:-1px;border-radius:15px;background:var(--ink);color:#fff;
-  display:flex;align-items:center;justify-content:center}
+/* The corner has to clear the tray. At a fixed 20px radius on a 78px card the
+   fill has already curved ~5.7px inward by the height the tray sits at, so the
+   round button ended up against the page instead of the card — it read as
+   hanging off the edge. The radius follows the same .18 of height every other
+   measure on the card does, which puts the curve back inside the tray. */
+.schedule-bub.is-short.has-tray{border-radius:max(13px,calc(var(--s-tray) * .18))}
+/* An owed card holds its own height, so its tray stays on its face rather than
+   hanging below onto the next booking. */
+.schedule-cell:has(>.schedule-bub.is-owed.is-short.has-tray)>.ev-tray,
+.schedule-cell:has(>.schedule-bub.is-owed)>.ev-tray{
+  bottom:calc(var(--cell-pad,0px) + max(6px,calc(var(--s-tray) * .067)))}
+/* Duration changes the live card's footprint, never its information hierarchy.
+   The arrival time, cue, and customer remain the same scale as the reference
+   card at every duration. */
+.is-short .ev-face{padding-top:4px;gap:2px}
+/* The timer keeps its clock and its two controls at any height; what gives is
+   the space around them. */
+.is-short .tm{gap:0}
+/* The caption is the first thing to go: on the two-row card the clock and the
+   alarm line have taken the height between them, and the team name is already
+   on the board in the cards either side of it. */
+.is-live-hour .tm-sub{display:none}
+/* ── the fills that were "ink" ──
+   A handful of rules use --ink as a dark FILL rather than as text. Those cannot
+   follow the token when it flips to near-white, so they are restated here as
+   the theme's own deepest surface. */
+[data-theme="dark"] .panel,
+[data-theme="dark"] .rowcard,
+[data-theme="dark"] .bcard.is-counter,
+[data-theme="dark"] .schedule-bub.is-timer,
+[data-theme="dark"] .bub.counter{background:#0D0D0D;border-color:#0D0D0D;color:#fff}
+/* The schedule card's paper-fill states become the theme's raised surface. */
+[data-theme="dark"] .bub{background:var(--paper);border-color:var(--edge2);color:var(--ink)}
+[data-theme="dark"] .schedule-open{background:var(--paper);border-color:var(--edge);color:var(--ink)}
 
 /* A single continuous timeline replaces the former stack of hour-sized
    fragments in day view, while keeping the same bubble visual language. */
-.gridcard{--schedule-row:36px;overflow:visible}
-.gridsticky,.schedule-board{min-width:calc(72px + var(--cols) * 98px)}
-.schedule-board{position:relative;display:grid;grid-template-columns:72px repeat(var(--cols),minmax(92px,1fr));
-  grid-template-rows:repeat(var(--rows),var(--schedule-row));column-gap:8px;padding:10px 0 14px;
-  background:repeating-linear-gradient(to bottom,transparent 0 calc(var(--schedule-row) * 2 - 1px),
-    color-mix(in srgb,var(--tint-fg) 12%,transparent) calc(var(--schedule-row) * 2 - 1px) calc(var(--schedule-row) * 2))}
+.gridcard{--schedule-row:44px;overflow:visible}
+.gridsticky,.schedule-board{min-width:calc(72px + var(--cols) * 124px)}
+/* The cards raise their own z-index to stack against each other — a live card
+   lifts above its neighbours, a hovered one above the rest. Those values have to
+   compete only inside the board: without a stacking context here they were
+   measured against the sticky pitch header (3) and the topbar (5), so a live
+   card scrolling out of view painted over the chrome instead of under it.
+   `isolation` contains them without touching layout. */
+/* No hour rules ruled across the background and no spine down the time column:
+   the cards are the grid. Their own edges already state where each hour starts,
+   so a second set of lines behind them only competes with the tiles. */
+.schedule-board{isolation:isolate;position:relative;display:grid;grid-template-columns:72px repeat(var(--cols),minmax(118px,1fr));
+  grid-template-rows:repeat(var(--rows),var(--schedule-row));column-gap:12px;padding:10px 0 14px}
 .schedule-hour{grid-column:1;grid-row:var(--grid-row)/span var(--grid-span,1);min-height:var(--schedule-row)}
-.schedule-hour::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;
-  width:1px;transform:translateX(-50%);background:var(--edge3)}
-.schedule-cell{grid-column:var(--grid-col);grid-row:var(--grid-row)/span var(--grid-span,1);position:relative;
-  z-index:1;padding:3px 0}
-.schedule-bub{height:100%;min-height:30px;border-radius:18px;flex-direction:column;gap:5px;padding:8px 10px;text-align:center;
-  border-width:1.5px;box-shadow:0 1px 2px rgba(22,24,28,.04)}
-.schedule-bub:hover{z-index:2;filter:brightness(.99);box-shadow:0 4px 12px rgba(22,24,28,.12)}
-.schedule-bub:focus-visible{z-index:3}
-.bub.schedule-bub>.bub-time{transform:none}
-.schedule-bub .bub-time{font:800 14px/1 var(--sans);max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.schedule-bub strong{display:block;max-width:100%;font:700 11px/1.05 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.schedule-bub small{display:block;margin-top:auto;font:800 8px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;opacity:.72}
-.schedule-cell.compact .schedule-bub{flex-direction:row;gap:4px;padding:3px 8px;border-radius:14px}
-.schedule-cell.compact .schedule-bub .bub-time{font-size:11.5px}
-.schedule-cell.compact .schedule-bub strong,.schedule-cell.compact .schedule-bub small{display:none}
-.schedule-open{border-color:var(--lime-deep);color:var(--ink);background:var(--lime-pale);font-weight:700}
-.schedule-open.full{box-shadow:inset 0 0 0 1px rgba(188,213,60,.4),0 1px 2px rgba(22,24,28,.04)}
-.schedule-open.partial{border-style:dashed;background:rgba(255,255,255,.88);color:var(--body)}
-.schedule-open .bub-time{font-size:14.5px;color:inherit}
+.is-tall .ev-head{gap:10px}
+.is-tall .ev-foot strong{font-size:12.5px}
+/* The kind tag labels the card from the top edge instead of trailing it. */
+.is-run small{margin-top:0;align-self:flex-start;opacity:.62;line-height:1}
 .schedule-open strong{color:var(--lime-txt);font:800 12.5px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase}
+/* ── collapsed rows ──
+   Sixteen hours across three pitches is a lot of scrolling to answer "what is
+   free tonight?". Collapsed, a row is 22px instead of 44 and every card falls
+   to a single line, so the whole trading day lands on one screen and the
+   question is answered by the pattern of fills rather than by reading. Nothing
+   is hidden that changes the answer — the times and the fills stay; the rail,
+   the band, the number and the tag are detail for when you have picked one. */
+/* Collapsed, the day board stops being a timeline and becomes a table: one row
+   per hour, one column per pitch, every cell the same size. A timeline answers
+   "how long is this booking?" — which is not the question being asked when you
+   are scanning for a free evening. A grid answers "which of these is free?" in
+   one pass, because every cell occupies the same amount of eye. */
+.gridcard.is-dense{--schedule-row:22px;--dense-time:92px}
+.is-dense .daycard .bandrow,.daycard.is-dense .bandrow{grid-template-columns:72px repeat(var(--cols),minmax(0,1fr));
+  gap:5px;margin-bottom:4px}
+/* Twice the rows means the hour has to stay findable: the on-the-hour line
+   keeps a full-strength label and a little more air above it, the half hour
+   reads as its subdivision rather than as an equal peer. */
+.is-dense .hourlbl{font:700 10px var(--sans);font-variant-numeric:tabular-nums}
+.is-dense .band-head{padding-top:5px;padding-bottom:5px}
+.is-dense .band{margin-bottom:3px}
+/* the sticky block is permanent chrome; collapsed, it gives height back too */
+.is-dense .calcols,.is-dense .pitchstrip{padding:6px 0 7px}
+/* Collapsed, the header still has to name its column. The rule here used to be
+   "span:not(.open)", written when the name and the count were direct children
+   of the button; once they were wrapped in .pitchcol-txt it matched the wrapper
+   and blanked the whole header, leaving a bare donut over an unlabelled column.
+   The donut is what goes instead - the aside already carries pitch load as a
+   labelled figure, so it was the redundant half of the pair. */
+.is-dense .pitchcol{padding:7px 10px;justify-content:center}
+.is-dense .pitchcol .pdonut{display:none}
+.is-dense .pitchcol-txt{align-items:center;text-align:center}
+.is-dense .pitchcol b{font-size:13px}
+.is-dense .schedule-hour{font-size:10px}
+.is-dense .bandrow{gap:6px;margin-bottom:6px}
+
+.densebtn.on{background:var(--fill-deep);border-color:var(--fill-deep);color:#fff}
+
 .schedule-now{position:absolute;z-index:5;left:72px;right:0;top:calc(8px + var(--now-row) * var(--schedule-row));
   height:2px;background:var(--red);pointer-events:none}
 .schedule-now::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--red)}
@@ -457,7 +1625,8 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
 /* ─── availability aside ──────────────────────────────── */
 .aside{position:sticky;top:88px;display:flex;flex-direction:column;gap:14px;min-width:0}
-.aside.has-panel{max-height:calc(100vh - 104px);overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
+.aside.has-panel{max-height:none;overflow:visible;padding-right:0}
+.aside.has-panel .loadcard{display:none}
 .group-panel{max-height:calc(100vh - 108px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;
   scrollbar-color:var(--d-off) transparent}
 .group-panel .panel-head{align-items:flex-start;margin-bottom:8px}
@@ -479,10 +1648,10 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .group-date span{font:700 9px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--d-muted)}
 .group-date b{font:700 12.5px var(--sans);white-space:nowrap}
 .group-date small{font:600 9.5px var(--sans);color:var(--d-muted)}
-.group-date.on{background:var(--lime);border-color:var(--lime);color:var(--ink)}
+.group-date.on{background:var(--lime);border-color:var(--lime);color:#16181C}
 .group-date.on span,.group-date.on small{color:rgba(22,24,28,.68)}
 .group-date.on.conflict{background:var(--warn);border-color:var(--warn)}
-.group-date.unavailable{cursor:not-allowed;opacity:.46;background:var(--ink)}
+.group-date.unavailable{cursor:not-allowed;opacity:.46;background:var(--fill-deep)}
 .group-summary{display:flex;align-items:center;gap:10px;margin-top:12px;padding:11px 12px;border-radius:14px;
   background:var(--field);border:1px solid var(--chrome)}
 .group-summary>div{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -493,7 +1662,17 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .group-summary.conflict{flex-wrap:wrap;border-color:var(--hold-fill)}
 .group-details{margin-top:15px;padding-top:14px}
 .group-confirm{margin-top:14px}
-.sel-time{font:700 34px/1 var(--disp);letter-spacing:-.2px}
+.sel-time{margin:14px 0 2px;font:700 34px/1 var(--disp);letter-spacing:-.2px}
+/* The two arrows sit either side of the time they change, so the thing being
+   adjusted is between the controls that adjust it rather than under them. */
+.sel-time.is-adjust{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sel-time-txt{flex:1 1 auto;min-width:0;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tstep{flex:none;width:34px;height:34px;border-radius:50%;border:0;background:var(--field);color:#fff;
+  cursor:pointer;font:700 18px/1 var(--sans);display:grid;place-items:center;transition:.12s}
+.tstep:hover:not(:disabled){background:var(--hold-btn)}
+/* Unreachable rather than hidden: a half hour that cannot be sold still has to
+   look like something that exists, or the control appears broken. */
+.tstep:disabled{color:var(--d-off);cursor:not-allowed}
 .sel-where{font:500 12.5px var(--sans);color:var(--d-body);margin-top:5px}
 .toggle-form{width:100%;height:42px;border-radius:15px;cursor:pointer;background:transparent;
   border:1.5px dashed var(--hold-btn);color:var(--lime);font:700 13px var(--sans)}
@@ -504,10 +1683,11 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .durbox{background:var(--field);border-radius:18px;padding:13px 14px;margin-top:14px}
 .start-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:13px}
 .start-opt{height:35px;border-radius:11px;border:1px solid var(--chrome);cursor:pointer;
-  background:var(--ink);color:var(--d-body);font:700 12.5px var(--sans)}
-.start-opt.on{background:#fff;border-color:#fff;color:var(--ink)}
+  background:var(--fill-deep);color:var(--d-body);font:700 12.5px var(--sans)}
+.start-opt.on{background:#fff;border-color:#fff;color:#16181C}
 .durbox-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:11px;
   border-top:1px solid var(--chrome)}
+.durbox-head.is-first{padding-top:0;border-top:0}
 .durbox-head .val{font:700 13px var(--sans);color:var(--lime)}
 .durbox-row{display:flex;align-items:center;gap:10px;margin-top:9px}
 .step{width:44px;height:44px;border-radius:14px;border:0;flex:none;background:var(--field);color:#fff;
@@ -521,9 +1701,9 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .window-state i{display:grid;place-items:center;width:15px;height:15px;flex:none;border-radius:50%;
   font:700 9px/1 var(--sans);font-style:normal}
 .window-state.ok{background:rgba(215,242,75,.1);color:var(--lime)}
-.window-state.ok i{background:var(--lime);color:var(--ink)}
+.window-state.ok i{background:var(--lime);color:#16181C}
 .window-state.conflict{background:rgba(255,201,77,.12);color:var(--warn)}
-.window-state.conflict i{background:var(--warn);color:var(--ink)}
+.window-state.conflict i{background:var(--warn);color:#16181C}
 
 .block-toggle{width:100%;height:38px;border-radius:13px;background:transparent;border:0;cursor:pointer;
   color:var(--d-muted);font:600 12.5px var(--sans);text-decoration:underline;text-underline-offset:3px}
@@ -531,8 +1711,8 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .blockbox-warn{display:flex;gap:9px;align-items:flex-start;margin-bottom:13px}
 .blockbox-warn i{width:8px;height:8px;border-radius:50%;background:var(--warn);margin-top:5px;flex:none;display:block}
 .blockbox-warn p{font:500 12px/1.5 var(--sans);color:var(--d-body)}
-.blockbox .dinput,.blockbox textarea{background:var(--ink)}
-.reason{width:100%;height:74px;resize:none;background:var(--ink);border:0;border-radius:14px;padding:11px 13px;
+.blockbox .dinput,.blockbox textarea{background:var(--fill-deep)}
+.reason{width:100%;height:74px;resize:none;background:var(--fill-deep);border:0;border-radius:14px;padding:11px 13px;
   color:#fff;font:500 13px/1.45 var(--sans);outline:none;font-family:var(--sans)}
 .reason-count{font:600 11px var(--sans);color:var(--d-muted);margin-top:4px;text-align:right}
 .holdbtn{position:relative;overflow:hidden;width:100%;height:46px;border-radius:15px;border:0;
@@ -572,6 +1752,7 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .alert.game .rel{color:var(--blue)}
 .alert.cash .rel{color:var(--amber-txt)}
 .alert.urgent .rel{color:var(--red-deep)}
+
 .alert-body{min-width:0}
 .alert-body .line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .alert-body .line b{font:700 15px var(--sans)}
@@ -579,13 +1760,16 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .atag{display:inline-flex;align-items:center;border-radius:999px;padding:4px 11px;font:700 10.5px var(--sans);
   letter-spacing:.04em;background:var(--soft);color:var(--ink)}
 .atag.game{background:var(--blue-pale);color:var(--blue-deep)}
-.atag.cash{background:var(--warn);color:var(--ink)}
+.atag.cash{background:var(--warn);color:#16181C}
 .atag.urgent{background:var(--red);color:#fff}
 .abtn{width:100%;height:38px;border-radius:13px;border:0;cursor:pointer;font:700 12.5px var(--sans);
   background:var(--soft);color:var(--ink)}
 .abtn.game{background:var(--blue);color:#fff}
-.abtn.cash{background:var(--amber);color:#fff}
-.abtn.urgent{background:var(--ink);color:#fff}
+/* Amber is a light fill in BOTH themes, so it takes a literal dark, not
+   `--ink` — that token inverts to near-white and would fail in dark exactly as
+   white failed here in light (2.24:1 -> 7.15:1, and 7.15:1 in dark too). */
+.abtn.cash{background:var(--amber);color:#16181C}
+.abtn.urgent{background:var(--fill-deep);color:#fff}
 .alert-none{padding:16px;font:500 13px var(--sans);color:var(--body);border-top:1px solid var(--rule)}
 
 /* ─── sessions ────────────────────────────────────────── */
@@ -613,7 +1797,7 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
 .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .tile{background:var(--paper);color:var(--ink);border:1px solid var(--edge);border-radius:26px;padding:20px}
-.tile.fill{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tile.fill{background:var(--fill-deep);color:#fff;border-color:var(--ink)}
 .tile .lbl{font:700 10.5px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--muted2)}
 .tile.fill .lbl{color:var(--lime)}
 .tile .val{font:700 44px/1 var(--disp);margin-top:10px;letter-spacing:-.5px}
@@ -624,16 +1808,16 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .sess-sec .sechead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .sess-sec .sechead>i{width:9px;height:9px;border-radius:50%;background:var(--red);display:block;flex:none}
 .sess-sec.priority{border-top:0;padding-top:0}
-.priority-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.priority-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(272px,1fr));gap:10px}
 .priority-strip .empty{grid-column:1/-1}
-.actioncard{border-radius:20px}
+.actioncard{border-radius:18px}
 .sess-group{display:flex;flex-direction:column;gap:8px}
 .sess-group + .sess-group{margin-top:10px}
 .sechead.compact{padding:0 2px}
 
 .scard{background:var(--paper);color:var(--ink);border:1px solid var(--edge);border-radius:26px;padding:18px;
   display:flex;flex-direction:column;gap:12px}
-.scard.live{background:var(--ink);color:#fff;border-color:var(--ink)}
+.scard.live{background:var(--fill-deep);color:#fff;border-color:var(--ink)}
 .scard.duepay{background:var(--amber-bg);color:var(--ink);border:1.5px solid var(--amber)}
 .scard.big{border-width:1.5px}
 .scard.dim{opacity:.72}
@@ -645,11 +1829,14 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .scard.live .sub{color:var(--d-body)}
 .scard.duepay .sub{color:var(--amber-txt2)}
 .scard .clock{margin-left:auto;font:700 13px var(--sans)}
-.scard .bigclock{margin-left:auto;font:700 22px/1 var(--disp);color:var(--lime)}
+.scard .bigclock{margin-left:auto;font:700 22px/1 var(--disp);color:var(--ink)}
+/* Lime reads only against the dark fill of a live card; on the paper card it
+   measured 1.26:1, so the clock takes the card's own ink there instead. */
+.scard.live .bigclock{color:var(--lime)}
 .scard.duepay .bigclock{color:var(--amber-txt)}
 .scard .strack{height:8px;border-radius:5px;background:var(--rule);overflow:hidden}
 .scard.live .strack{background:var(--chrome)}
-.scard .strack .fill{height:100%;border-radius:5px;background:var(--ink)}
+.scard .strack .fill{height:100%;border-radius:5px;background:var(--fill-deep)}
 .scard.live .strack .fill{background:var(--lime)}
 .scard .strack .fill.over{background:var(--red)}
 .scard .split{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -657,18 +1844,57 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .scard .pay.due{color:var(--amber-txt)}
 .scard.live .pay{color:var(--lime)}
 .scard.live .pay.due{color:var(--amber)}
-.scard .acts{display:flex;gap:8px}
+/* -- the action queue card --
+   The queue is read standing up, so it has to fit the screen it is on: every
+   card that falls below the fold is a session nobody is looking at. These trim
+   the reading card down to a working one. The pitch leads it, because the queue
+   mixes all three and a card is not actionable until you know which pitch it is
+   for - a tag in the pitch's own colour, and that colour again as a rail down
+   the edge so a screen of cards can be grouped by eye without reading a word. */
+.scard.actioncard{padding:12px 13px 13px;gap:7px;box-shadow:inset 4px 0 0 var(--tint-line)}
+.scard.actioncard.focus{box-shadow:inset 4px 0 0 var(--tint-line),0 0 0 3px var(--ink)}
+.scard.actioncard .row{gap:5px}
+.scard.actioncard .team{font-size:17px;line-height:1.12}
+.scard.actioncard .sub{font-size:11.5px}
+.scard.actioncard .pay{font-size:11.5px}
+.scard.actioncard .sstat,.scard.actioncard .ssrc{padding:3px 9px;font-size:10px}
+.scard.actioncard .act{height:36px;border-radius:11px;font-size:12px;padding:0 10px}
+/* The clock is a magnitude now, not a sentence, so it no longer needs display
+   type or a line of its own. */
+.scard.actioncard .bigclock{font:800 15px var(--sans)}
+.pitchtag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;
+  font:800 10px var(--sans);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;
+  background:var(--tint-line);color:var(--tint-fg)}
+
+/* Hover is the only answer these give before they are pressed, so it moves. The
+   lift is a transform, which costs no layout, and the shadow has to be far
+   heavier in the dark theme to register against a near-black page at all. */
+.scard.actioncard,.pitchstatus{transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.scard.actioncard:hover{transform:translateY(-2px);border-color:var(--tint-line);
+  box-shadow:inset 4px 0 0 var(--tint-line),0 7px 18px rgba(22,24,28,.16)}
+.scard.actioncard.focus:hover{
+  box-shadow:inset 4px 0 0 var(--tint-line),0 0 0 3px var(--ink),0 7px 18px rgba(22,24,28,.16)}
+[data-theme="dark"] .scard.actioncard:hover{
+  box-shadow:inset 4px 0 0 var(--tint-line),0 10px 24px rgba(0,0,0,.55)}
+button.pitchstatus:hover{transform:translateY(-2px);box-shadow:0 7px 18px rgba(22,24,28,.16)}
+[data-theme="dark"] button.pitchstatus:hover{box-shadow:0 10px 24px rgba(0,0,0,.55)}
+@media (prefers-reduced-motion:reduce){
+  .scard.actioncard,.pitchstatus{transition:none}
+  .scard.actioncard:hover,button.pitchstatus:hover{transform:none}
+}
+.scard .acts{display:flex;gap:8px;min-width:0}
+.scard .acts:has(> :nth-child(3)) .act{flex:1 1 0;min-width:0;padding-inline:4px;font-size:12px}
 .scard .opts{display:flex;gap:5px}
 .act{flex:1;height:44px;border-radius:15px;border:0;cursor:pointer;white-space:nowrap;padding:0 14px;
   font:700 13px var(--sans);background:var(--soft);color:var(--ink)}
-.act.primary{flex:2;background:var(--ink);color:#fff}
+.act.primary{flex:2;background:var(--fill-deep);color:#fff}
 .scard.live .act{background:var(--chrome);color:#fff}
-.scard.live .act.primary{background:var(--lime);color:var(--ink)}
+.scard.live .act.primary{background:var(--lime);color:#16181C}
 .sstat{display:inline-flex;align-items:center;border-radius:999px;padding:5px 12px;font:700 11px var(--sans);
   letter-spacing:.04em;background:var(--soft);color:var(--ink)}
-.sstat.play{background:var(--lime)}
+.sstat.play{background:var(--lime);color:#16181C}
 .sstat.over{background:var(--red);color:#fff}
-.sstat.duepay{background:var(--amber);color:var(--ink);border:1px solid var(--amber)}
+.sstat.duepay{background:var(--amber);color:#16181C;border:1px solid var(--amber)}
 .ssrc{display:inline-flex;align-items:center;border-radius:999px;padding:5px 11px;font:700 11px var(--sans);
   background:transparent;color:var(--body);border:1px solid var(--edge3)}
 .ssrc.via-app{background:transparent;color:var(--body)}
@@ -682,13 +1908,13 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
    paper and flips to ink while a match is live. */
 .pitchhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 14px;border-radius:16px;
   background:var(--tint-bg);color:var(--tint-fg);border:1px solid var(--tint-line)}
-.pitchhead.neutral.live{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pitchhead.neutral.live{background:var(--fill-deep);color:#fff;border-color:var(--ink)}
 .pitchhead.neutral.live .sub{color:var(--d-body)}
 .pitchhead b{font:700 17px/1 var(--disp)}
 .pitchhead .sub{font:500 12.5px var(--sans);color:var(--tint-soft)}
 .pitchhead .state{display:inline-flex;align-items:center;border-radius:999px;padding:5px 12px;
   font:700 11px var(--sans);background:var(--tint-chip);color:var(--tint-chip-fg)}
-.pitchhead .state.live{background:var(--lime);color:var(--ink)}
+.pitchhead .state.live{background:var(--lime);color:#16181C}
 .pitchhead .end{margin-left:auto;display:flex;align-items:center;gap:12px}
 .pitchhead .end b{font:700 12px var(--sans)}
 .pitchhead .sub,.pitchhead .state{font-size:11.5px}
@@ -706,23 +1932,51 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   letter-spacing:.05em;text-transform:uppercase}
 .pitchstatus em{grid-column:1/-1;font:600 12px var(--sans);color:var(--body);font-style:normal;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
-.pitchstatus.live{background:var(--ink);border-color:var(--ink);color:#fff}
+.pitchstatus.live{background:var(--fill-deep);border-color:var(--fill-deep);color:#fff}
 .pitchstatus.live small,.pitchstatus.live em{color:var(--d-body)}
-.pitchstatus.live strong{background:var(--lime);color:var(--ink)}
+.pitchstatus.live strong{background:var(--lime);color:#16181C}
 .pitchstatus.duepay{background:var(--amber-bg);border-color:var(--amber)}
-.pitchstatus.duepay strong{background:var(--amber);color:var(--ink)}
+.pitchstatus.duepay strong{background:var(--amber);color:#16181C}
+/* -- pitch schedule fills --
+   The strip answers "what is on this pitch today" before a word of it is read,
+   so every state needs a fill of its own against the track rather than a shade
+   of it. The card surfaces could not do that job in both themes: --paper sits
+   eight levels above --soft in the dark theme, so not-started blocks sank into
+   the groove, and --edge2 landed twelve levels further on, leaving three greys
+   that read as one. These are picked against the track instead, and the legend
+   swatches draw from the same tokens so the key cannot drift from the bars. */
+:root{
+  --tl-next:#FFFFFF;  --tl-next-line:#CDD2C4; --tl-next-fg:#16181C;
+  --tl-done:#E4E6DE;  --tl-done-line:#CBD0C2; --tl-done-fg:#5E646B;
+  --tl-void:#EFF1EA;  --tl-void-line:#DCE0D4; --tl-void-fg:#8D9195;
+}
+[data-theme="dark"]{
+  --tl-next:#3C444E;  --tl-next-line:#5A6674; --tl-next-fg:#F4F5F3;
+  --tl-done:#2A2E33;  --tl-done-line:#3F454C; --tl-done-fg:#9AA0A6;
+  --tl-void:#2C2525;  --tl-void-line:#3E3333; --tl-void-fg:#7C8085;
+}
 .timeline{background:var(--paper);border:1px solid var(--edge);border-radius:16px;padding:12px 16px 8px}
 .tl-track{position:relative;height:30px;border-radius:9px;background:var(--soft)}
+/* The block carries its focus ring as an inline box-shadow, which a stylesheet
+   cannot override, so hover speaks through the outline instead. */
 .tl-block{position:absolute;top:0;bottom:0;border-radius:8px;overflow:hidden;display:flex;align-items:center;
   gap:5px;padding:0 5px;cursor:pointer;min-width:26px;white-space:nowrap;text-overflow:ellipsis;
-  font:700 11px var(--sans)}
+  font:700 11px var(--sans);outline:2px solid transparent;outline-offset:-2px;
+  transition:outline-color .14s ease}
+.tl-block:hover{outline-color:var(--ink)}
 .tl-marks{margin-left:auto;display:flex;align-items:center;gap:4px;flex:none}
+/* Mixed from the block's own text colour so one rule covers every fill: a dark
+   wash on the pale blocks, a light one on the dark. The flat rgba is the
+   fallback for engines without color-mix. */
 .tl-word{font:700 9.5px var(--sans);letter-spacing:.08em;padding:2px 6px;border-radius:999px;line-height:1.4;
-  white-space:nowrap;background:rgba(22,24,28,.13);color:var(--ink)}
+  white-space:nowrap;color:inherit;background:rgba(127,127,127,.24);
+  background:color-mix(in srgb,currentColor 16%,transparent)}
 .tl-word.ondark{background:rgba(255,255,255,.16);color:#fff}
 .tick-dot{display:grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;color:#fff;
   font:700 12px var(--sans);line-height:1;box-shadow:0 0 0 1.5px rgba(255,255,255,.7)}
 .tick-dot.paid{background:var(--green)}
+/* --fill-deep is a surface, near-black in either theme, so the marker was a
+   black line on a black track. --ink is the token that inverts. */
 .tl-now{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--ink)}
 .tl-nowdot{position:absolute;top:-11px;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;
   background:var(--ink)}
@@ -766,8 +2020,8 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .mini{height:28px;padding:0 10px;border-radius:9px;border:0;cursor:pointer;background:var(--soft);
   color:var(--ink);font:700 11.5px var(--sans);white-space:nowrap}
 .mini:hover{background:var(--edge2)}
-.mini.primary{background:var(--ink);color:#fff}
-.scard.live .mini.primary{background:var(--lime);color:var(--ink)}
+.mini.primary{background:var(--fill-deep);color:#fff}
+.scard.live .mini.primary{background:var(--lime);color:#16181C}
 .mini.clear{margin-left:auto}
 /* the row controls carry the real work, so they keep a usable target */
 .strow .seg-opt{height:32px;font-size:11px}
@@ -782,7 +2036,7 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   background:var(--edge2);transition:background .15s;display:block}
 .switch i{display:block;width:24px;height:24px;border-radius:50%;background:var(--paper);
   box-shadow:0 1px 3px rgba(20,30,15,.28);transition:transform .15s}
-.switch.on{background:var(--ink)}
+.switch.on{background:var(--fill-deep)}
 .switch.on i{transform:translateX(22px);background:var(--lime)}
 .pitchcolors{display:flex;flex-direction:column;gap:18px;margin-top:18px;border-top:1px solid var(--rule);padding-top:16px}
 .pitchcolors-head b{display:block;font:700 13px var(--sans);margin-bottom:3px}
@@ -864,13 +2118,15 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .bkrow b.amt{text-align:right;font:700 14.5px var(--sans)}
 .src{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 12px;
   font:700 11px var(--sans);background:var(--soft);color:var(--ink)}
-.src.via-app{background:var(--lime)}
+/* Lime is identical in both themes, so anything on it states its own dark
+   foreground rather than borrowing the inverting one. */
+.src.via-app{background:var(--lime);color:#16181C}
 
 /* ─── product shell: authentication, errors and audit ─── */
 .auth{min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--soft)}
 .authcard{width:min(100%,430px);display:flex;flex-direction:column;gap:18px;background:var(--paper);
   border:1px solid var(--edge);border-radius:28px;padding:28px;box-shadow:0 24px 70px rgba(22,24,28,.12)}
-.authcard .mark{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:var(--ink);
+.authcard .mark{width:46px;height:46px;display:grid;place-items:center;border-radius:15px;background:var(--fill-deep);
   color:var(--lime);font:700 17px var(--disp)}
 .authcard h1{margin:4px 0;font:700 30px/1 var(--disp)}
 .authcard p,.settings-note{margin:0;color:var(--body);font:400 13px/1.5 var(--sans)}
@@ -908,6 +2164,30 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 /* The console remains dense, but the page itself never overflows on a phone.
    Wide operational tables scroll inside their own surface and primary navigation
    becomes a persistent thumb-reachable bar. */
+/* ── the middle widths ──
+   Zooming a desktop browser lands the page at every width between the full
+   layout and the phone one, so the bar sheds in the order things stop earning
+   their place rather than snapping straight to the mobile grid. The date goes
+   first: the board bar states it again directly underneath. */
+@media(max-width:1250px){
+  .today{display:none}
+}
+@media(max-width:1120px){
+  .livepill{display:none}
+  .brand-txt span{display:none}
+  .topbar{gap:14px;padding:0 16px}
+}
+/* The board bar is one row until its own contents stop fitting, then it wraps
+   as two — lead and controls on one line, the day chips spanning underneath —
+   rather than squeezing the chips to nothing. */
+@media(max-width:1040px){
+  .boardbar{flex-wrap:wrap}
+  .boardbar .dayjump{order:3;flex:1 1 100%;min-width:0}
+  .boardbar-end{margin-left:auto}
+  /* The longest label is the first thing to give, so the lead and the controls
+     still share a row and only the day chips drop to their own. */
+  .pill-long{display:none}
+}
 @media(max-width:900px){
   body{overflow-x:hidden;padding-bottom:66px}
   .topbar{height:60px;padding:0 12px;gap:8px}
@@ -915,13 +2195,18 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .topbar-end{gap:7px}.livepill,.today,.account>span:last-child{display:none}
   .cog,.avatar,.account{min-width:44px;min-height:44px}.cog,.avatar{width:44px;height:44px}
   .tabs{position:fixed;z-index:80;left:0;right:0;bottom:0;height:64px;margin:0;padding:8px 8px calc(8px + env(safe-area-inset-bottom));
-    display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;background:var(--paper);border-top:1px solid var(--edge);overflow:hidden}
+    display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:3px;background:var(--paper);
+    border-top:1px solid var(--edge);overflow:hidden}
   .tabs .chip.big{position:relative;height:44px;min-width:0;padding:0 3px;font-size:10.5px;justify-content:center;box-shadow:none}
   .tabs .nav-full{display:none}.tabs .nav-short{display:inline}
-  .tabs .badge{position:absolute;top:-5px;right:0;margin:0}
+  .tabs .badge{position:absolute;left:auto;top:-5px;right:0;margin:0}
+  .tabs .chip.big.nav-alert{margin-right:0}
   .gridcard{overflow-x:auto;overflow-y:hidden;scrollbar-gutter:stable}
   .gridcard:not(.daycard) .daystrip,.gridcard:not(.daycard) .bandrow{min-width:700px}
-  .daycard .gridsticky,.daycard .schedule-board{min-width:480px}
+  /* 480px across three pitches leaves a 124px column, which is narrower than
+     the card composition can be drawn in — every card clipped. The board already
+     scrolls sideways here, so it is given the width a card actually needs. */
+  .daycard .gridsticky,.daycard .schedule-board{min-width:620px}
   .gridsticky{position:static;top:auto}.app-error{top:62px;margin-left:12px;margin-right:12px}
   .avail,.sessions{grid-template-columns:minmax(0,1fr);padding:14px 12px 28px}
   .aside{position:static;max-height:none;overflow:visible;padding:0;background:none}
@@ -961,4 +2246,176 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .acct-card{padding:15px;border-radius:20px}.acct-head{display:none}.acct-table{border:0;border-radius:0}
   .acct-row{grid-template-columns:minmax(0,1fr);gap:8px;border:1px solid var(--rule);border-radius:14px;margin-bottom:8px}
   .acct-actions{justify-content:flex-start}.acct-actions .mini{height:44px}.acct-event{grid-template-columns:1fr}
+}
+
+/* `[data-theme="dark"] .bub` repaints the neutral bubble onto the dark surface,
+   but it ties with `.bub.via-app` on specificity — one attribute plus one class
+   against two classes — so being later it also stripped the lime off an app
+   booking while the design's rule kept setting dark text on it. Contrast came
+   out at 1.13: the card was there and unreadable. The kinds that carry their own
+   fill have to outrank the neutral repaint, and the text on lime stays dark in
+   both themes because the lime does not change. */
+[data-theme="dark"] .bub.via-app,
+[data-theme="dark"] .schedule-bub.via-app{background:var(--lime);border-color:var(--lime-deep);color:#16181C}
+[data-theme="dark"] .ev-act.is-go,
+[data-theme="dark"] .tag.ondark,
+[data-theme="dark"] .dbtn.primary,
+[data-theme="dark"] .plate,
+[data-theme="dark"] .group-date.on,
+[data-theme="dark"] .scard.live .act.primary,
+[data-theme="dark"] .pitchhead .state.live,
+[data-theme="dark"] .pitchstatus.live strong,
+[data-theme="dark"] .scard.live .mini.primary,
+[data-theme="dark"] .window-state.ok i,
+[data-theme="dark"] .bub.counter .bub-free,
+[data-theme="dark"] [data-act="add-custom"]{color:#16181C}
+[data-theme="dark"] .bub.hold,
+[data-theme="dark"] .schedule-bub.hold{background:var(--lime-tint);border-color:var(--lime-tint);color:var(--lime-txt3)}
+/* Maintenance is meant to recede, but 4.29:1 is under AA and a blocked slot
+   still has to be readable — it is the one card that explains why a sellable
+   hour is missing. Lifted just far enough to clear the threshold. */
+[data-theme="dark"] .bub.blocked,
+[data-theme="dark"] .schedule-bub.blocked{color:#8E9297}
+.bcard.is-counter .bcard-rail em span{color:var(--ink)}
+.bcard.is-hold .bcard-rail em span{color:var(--lime-tint)}
+.bcard.is-blocked .bcard-rail em span{color:var(--soft)}
+.bcard.is-owing .bcard-rail em span{color:#BE3B2E}
+
+/* ═══════════════════════════════════════════════════════
+   CARDS DO NOT CHANGE WITH THE THEME
+   Dark mode remaps the page, not the bookings sitting on it. A counter booking
+   is the same object at 6am and at 10pm, so the operator learns one set of
+   fills and reads them in either theme without re-learning what a colour means
+   mid-shift. The open slot is the single exception: its whole job is to be the
+   page's own surface with nothing sold on it, so it follows the page down.
+
+   These pin the design system's light values as literals rather than tokens,
+   because the tokens are precisely what dark mode moves.
+   ═══════════════════════════════════════════════════════ */
+[data-theme="dark"] .bub.counter,
+[data-theme="dark"] .schedule-bub.counter,
+[data-theme="dark"] .bcard.is-counter{background:#16181C;border-color:#16181C;color:#fff}
+[data-theme="dark"] .bub.via-app,
+[data-theme="dark"] .schedule-bub.via-app{background:#D7F24B;border-color:#BCD53C;color:#16181C}
+[data-theme="dark"] .bub.hold,
+[data-theme="dark"] .schedule-bub.hold{background:#EDF8C4;border-color:#EDF8C4;color:#6B7A2E}
+[data-theme="dark"] .bub.blocked,
+[data-theme="dark"] .schedule-bub.blocked{background:#F4F5F0;border-color:#E4E6DE;color:#8E949B}
+[data-theme="dark"] .bub.part{background:#fff;border-color:#16181C;color:#16181C}
+/* The band wash and the rail chip read off tokens that invert, so they are
+   pinned too — otherwise a light card in dark mode gets a white wash across its
+   band and white text on its lime chip. */
+[data-theme="dark"] .schedule-bub{--ev-band:rgba(22,24,28,.07);--ev-seam:rgba(22,24,28,.05);
+  --ev-chip-fg:#16181C}
+[data-theme="dark"] .schedule-bub.counter{--ev-band:rgba(255,255,255,.09);--ev-seam:rgba(255,255,255,.08)}
+[data-theme="dark"] .schedule-bub.via-app{--ev-band:rgba(22,24,28,.11);--ev-seam:rgba(22,24,28,.07)}
+[data-theme="dark"] .schedule-bub.hold{--ev-band:rgba(107,122,46,.13);--ev-seam:rgba(107,122,46,.10)}
+[data-theme="dark"] .schedule-bub.blocked{--ev-band:rgba(22,24,28,.06);--ev-seam:rgba(22,24,28,.05)}
+/* The debt card is literal in both themes already; restated so nothing above
+   can repaint it. */
+[data-theme="dark"] .schedule-bub.is-owed{background:#BE3B2E;border-color:#BE3B2E;color:#fff}
+[data-theme="dark"] .schedule-bub.is-owed .ev-chip{background:#fff;color:#A82E22}
+/* A running card is ink in light whatever it was booked through, so it stays
+   ink in dark too. This has to come after the kind fills above: at equal
+   specificity the later rule wins, and .via-app was repainting the timer lime.
+   The value is the theme's deepest surface, the same one the design system's
+   ink-as-fill block gives this card — stated as #16181C it was light mode's
+   ink, nine units off the fill its own countdown ring is drawn in. */
+[data-theme="dark"] .schedule-bub.is-timer,
+[data-theme="dark"] .schedule-bub.is-running{background:#0D0D0D;border-color:#0D0D0D;color:#fff}
+/* ── deep red as TEXT, in dark ──
+   --red-deep is tuned to read on white. Every place it is used as a text colour
+   sits on a surface that goes dark with the theme, where it drops to ~2.6:1, so
+   the red comes up as the surface goes down. Scoped to the text uses on purpose:
+   the same token is a FILL for the count badge and the stop button's hover, and
+   lightening it there would break both. */
+[data-theme="dark"] .schedule-now b,
+[data-theme="dark"] .now-line-label,
+[data-theme="dark"] .alert.urgent .rel,
+[data-theme="dark"] .stat.danger b{color:#F08379}
+/* The one exception: open time follows the page it is drawn on. */
+[data-theme="dark"] .schedule-open{background:var(--paper);border-color:var(--edge);color:var(--ink)}
+[data-theme="dark"] .schedule-open.partial{background:var(--soft2);border-color:var(--edge3);color:var(--body)}
+
+/* ═══════════════════════════════════════════════════════
+   INTERACTION
+   One place for what every clickable surface does under the pointer, the
+   finger and the keyboard.
+
+   It sits at the end of the sheet on purpose. Hover and press are stated in
+   transform, outline and box-shadow, and a component further up that sets a
+   shadow of its own would otherwise quietly take the feedback back — which is
+   exactly how the selected slot lost its ring for as long as it did. Anything
+   that composes with a component's own shadow is restated here next to it,
+   rather than left to the cascade to get right.
+   ═══════════════════════════════════════════════════════ */
+:root{
+  --lift:-2px;
+  --lift-shadow:0 7px 18px rgba(22,24,28,.16);
+  --press:.985;
+  /* A wash rather than a colour: it composites over whatever background the
+     row already has, so one rule covers the plain, live, late and owed rows
+     without needing to know which is which. */
+  --hover-wash:linear-gradient(rgba(127,127,127,.10),rgba(127,127,127,.10));
+}
+/* A near-black page swallows a black shadow, so the dark theme spends more. */
+[data-theme="dark"]{--lift-shadow:0 10px 24px rgba(0,0,0,.55)}
+
+.bcard,.rowcard,button.pitchstatus,button.pitchcol,.group-date,.chip,.modeopt,
+.listrow,.strow,.pillbtn,.dbtn,.mini,.act,.btn,.ev-cta,.bub,.schedule-bub{
+  transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease,
+    background-color .14s ease,filter .14s ease}
+
+/* ── tiles rise ──
+   A grid of them should read as a surface you can pick from, not a printed
+   table. The three that carry an inset ring restate it, or the lift would
+   replace the ring instead of joining it. */
+.bcard:hover,.rowcard:hover,button.pitchstatus:hover,button.pitchcol:hover,
+.group-date:not(:disabled):not(.unavailable):hover{
+  transform:translateY(var(--lift));box-shadow:var(--lift-shadow)}
+.bcard.is-open:hover{box-shadow:inset 0 0 0 1.5px var(--lime-deep),var(--lift-shadow)}
+.bcard.is-blocked:hover{box-shadow:inset 0 0 0 1px var(--edge2),var(--lift-shadow)}
+.rowcard.is-done:hover{box-shadow:inset 0 0 0 1px var(--edge2),var(--lift-shadow)}
+
+/* ── rows tint ──
+   A ledger row is read, not picked up, so it takes a wash instead of a lift.
+   Its inset rail is the status accent and must survive, which is why this is a
+   background-image and not a shadow. */
+.strow:hover{background-image:var(--hover-wash)}
+
+/* ── slots ──
+   A slot with an action tray stays put: the tray is a sibling of the card, so
+   lifting the card would slide it out from under its own buttons. */
+.schedule-bub:not(.has-tray):hover{transform:translateY(var(--lift))}
+
+/* ── press ──
+   Nothing in the app acknowledged a press before this. At a counter that is
+   the feedback that matters most: the operator needs to know the tap landed
+   before the repaint arrives to prove it. Scale replaces the hover lift rather
+   than fighting it, and the shorter duration keeps it feeling immediate. */
+button:active:not(:disabled),.strow:active,.bcard:active,.rowcard:active{
+  transform:scale(var(--press));transition-duration:.05s}
+
+/* ── unavailable ──
+   Nothing said "you cannot press this" except the absence of a response. */
+button:disabled,.group-date.unavailable,[aria-disabled="true"]{cursor:not-allowed}
+button:disabled:hover,.group-date.unavailable:hover{transform:none;filter:none}
+
+/* ── keyboard ──
+   The global focus ring is an outline, which is the one thing a component's
+   own shadow cannot overwrite. Tiles that lift on hover lift on focus too, so
+   a keyboard walk through the board reads the same as a pointer over it. */
+.bcard:focus-visible,.rowcard:focus-visible,button.pitchstatus:focus-visible,
+button.pitchcol:focus-visible,.group-date:focus-visible{
+  transform:translateY(var(--lift));box-shadow:var(--lift-shadow)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    transition-duration:.01ms !important;
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    scroll-behavior:auto !important}
+  .bcard:hover,.rowcard:hover,button.pitchstatus:hover,button.pitchcol:hover,
+  .group-date:hover,.schedule-bub:hover,.bub.sel,
+  button:active:not(:disabled),.strow:active,.bcard:active,.rowcard:active{transform:none}
 }

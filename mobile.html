@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16181C">
+<title>Turf Operations — on the ground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700&display=swap">
+<link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+
+<!-- On a phone this fills the screen. On a desktop it centres as a phone-width
+     column so the build can be reviewed without a device. -->
+<div class="m-phone">
+  <div class="m-app">
+    <!-- header is per screen: dark shift bar on home, paper back-bar elsewhere -->
+    <header id="mHeader"></header>
+
+    <!-- the one scrolling pane; its offset is remembered per screen -->
+    <div id="mBody"></div>
+
+    <!-- fixed action dock, home only -->
+    <div id="mDock"></div>
+  </div>
+
+  <!-- sheets sit outside .m-app so the dock can never overlap them -->
+  <div id="mSheet"></div>
+</div>
+
+<script src="mobile.js"></script>
+</body>
+</html>
