@@ -312,6 +312,45 @@ test('client and server agree on pitch names and rates', async () => {
   });
 });
 
+/* The group tag is drawn from the client's accent palette but validated
+   against the server's own copy, so the two lists have to stay identical for
+   the same reason the rates do — except here a drift is silent: the colour is
+   simply dropped and the booking saves untagged. */
+test('client and server agree on the group colour palette', async () => {
+  const { GROUP_COLORS:server } = await import('../server/store.mjs');
+  const { PITCH_PALETTE:client } = await import('../client/constants.js');
+  assert.deepEqual(client.map(entry => entry.hex), server, 'group colour palettes differ between tiers');
+});
+
+test('a group booking carries its colour and its discount, and the discount needs a manager', () => {
+  const { store, owner, operator, manager } = fixture();
+  try {
+    const base = { date:'2026-08-20', pitch:1, start:600, end:660,
+      team:'Acme United', contact:'+91 90000 00040', kind:'group', groupType:'Corporate' };
+
+    /* An operator may tag a group, because a colour is not money. */
+    const [plain] = store.createBookings([{ ...base, groupColor:'#69359C' }], operator);
+    assert.equal(plain.groupColor, '#69359C');
+    assert.equal(plain.discount, 0);
+
+    /* A colour outside the palette is dropped rather than stored. */
+    const [odd] = store.createBookings([{ ...base, date:'2026-08-21', groupColor:'#123456' }], operator);
+    assert.equal(odd.groupColor, null);
+
+    /* Money is another matter: the same authority the payment-time discount asks for. */
+    expectCode('forbidden', () => store.createBookings([{ ...base, date:'2026-08-22', discountPct:10 }], operator));
+
+    const [cut] = store.createBookings([{ ...base, date:'2026-08-22', discountPct:10 }], manager);
+    assert.equal(cut.amount, 1200);
+    assert.equal(cut.discount, 120);
+
+    /* And past a fifth of the booking it is the owner's call. */
+    expectCode('discount_limit', () => store.createBookings([{ ...base, date:'2026-08-23', discountPct:30 }], manager));
+    const [deep] = store.createBookings([{ ...base, date:'2026-08-23', discountPct:30 }], owner);
+    assert.equal(deep.discount, 360);
+  } finally { store.close(); }
+});
+
 /* ── stating when play began ──
    The counter says when a team walked on; that is not the same claim as
    correcting a session's time after the fact, and it must not need a manager
@@ -392,5 +431,42 @@ test('a stated start outside the booking window is still a manager correction', 
       store.setStatus(yesterday.id, 'running', operator, '', minute, yesterday.version));
     /* Untouched by either refusal. */
     assert.equal(store.listState(date, date).bookings.find(row => row.id === booking.id).status, 'upcoming');
+  } finally { store.close(); }
+});
+
+test('a pitch runs one match at a time', () => {
+  const { store, operator, date, minute } = middayFixture();
+  try {
+    const [first] = store.createBookings([{
+      date, pitch:1, start:minute - 30, end:minute, team:'Ran Over',
+      contact:'+91 90000 00041',
+    }], operator);
+    const [second] = store.createBookings([{
+      date, pitch:1, start:minute, end:minute + 60, team:'Next Up',
+      contact:'+91 90000 00042',
+    }], operator);
+    /* Another pitch is a different piece of grass and is unaffected. */
+    const [elsewhere] = store.createBookings([{
+      date, pitch:2, start:minute, end:minute + 60, team:'Other Pitch',
+      contact:'+91 90000 00043',
+    }], operator);
+
+    const running = store.setStatus(first.id, 'running', operator, '', minute - 20, first.version);
+    assert.equal(running.status, 'running');
+
+    /* The first has run past its booked end, but the ball is still on the
+       pitch: the next hour cannot start until it is closed. */
+    expectCode('pitch_busy', () =>
+      store.setStatus(second.id, 'running', operator, '', minute, second.version));
+    assert.equal(store.listState(date, date).bookings.find(row => row.id === second.id).status, 'upcoming');
+
+    store.setStatus(elsewhere.id, 'running', operator, '', minute, elsewhere.version);
+    assert.equal(store.listState(date, date).bookings.find(row => row.id === elsewhere.id).status, 'running');
+
+    /* Close the first and the pitch is free again. */
+    const done = store.setStatus(first.id, 'done', operator, '', null, running.version);
+    const ready = store.listState(date, date).bookings.find(row => row.id === second.id);
+    assert.equal(done.status, 'done');
+    assert.equal(store.setStatus(second.id, 'running', operator, '', minute, ready.version).status, 'running');
   } finally { store.close(); }
 });

@@ -20,7 +20,12 @@ const TABS=[['availability','Availability','Slots'],['sessions','Sessions','Sess
   ['accounts','Accounts','Money'],
   ['alerts','Reminders','Alerts'],['dashboard','Dashboard','Overview']];
 const LIVE_VIEWS=new Set(['sessions','alerts']);
-const SCROLL_PANES=['liveRail','grid'];
+/* Panes whose scroll position survives a repaint. The aside and the panel
+   inside it are both here because which one actually scrolls changes with the
+   viewport: on a wide screen the group panel is the scroller, and on a narrow
+   one the aside becomes a sheet and scrolls instead. Registering a pane that
+   is not scrolling costs nothing — it saves and restores a zero. */
+const SCROLL_PANES=['liveRail','grid','aside','panel'];
 const scrollPane=id=>document.getElementById(id)||document.querySelector(`[data-scroll-pane="${id}"]`);
 
 export function renderTopbar(){
@@ -154,10 +159,18 @@ export function syncLiveCards(){
     const fill = card.querySelector('.tm-ring-fill');
     if (fill) fill.style.strokeDasharray =
       `${Math.min(100, Math.max(0, ((now - from) / (to - from)) * 100)).toFixed(2)} 100`;
+    /* The card is not repainted every second, so the crossing into overtime has
+       to be applied here or the colour would wait for the next full render —
+       which could be minutes, and the whole point is that it is late now. */
+    const over = now > to;
+    card.classList.toggle('is-over', over);
     const count = card.querySelector('[data-count]');
     /* countTxt returns markup — the seconds sit in their own element so they can
        ride a size down. Digits and tags only; no user data reaches this. */
-    if (count) count.innerHTML = countTxt(to);
+    if (count){
+      count.classList.toggle('is-over', over);
+      count.innerHTML = countTxt(to);
+    }
   });
 }
 

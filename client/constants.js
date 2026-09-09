@@ -5,7 +5,9 @@ export const PITCHES = [
 ];
 
 export const START_HOUR = 6;
-export const END_HOUR = 22;
+/* Midnight. Mirrors CLOSE_MIN in server/store.mjs, which is what actually
+   refuses a late booking — move one and you must move the other. */
+export const END_HOUR = 24;
 export const DAY_START = START_HOUR * 60;
 export const DAY_END = END_HOUR * 60;
 export const SPAN = DAY_END - DAY_START;
@@ -21,6 +23,9 @@ export const PITCH_PALETTE = [
   { name:'Slate', hex:'#4A5568' }, { name:'Denim', hex:'#35507A' },
 ];
 export const PITCH_DEFAULT_HEX = ['#006B3C', '#C8102E', '#69359C'];
+/* Group tags draw from the same accents the pitches do, so the board never
+   carries two unrelated colour languages. */
+export const GROUP_DISCOUNTS = [0, 5, 10, 15, 20];
 export const NEUTRAL_TINT = {
   bg:'var(--paper)', line:'var(--edge)', fg:'var(--ink)', soft:'var(--muted)', chip:'var(--soft)', chipFg:'var(--ink)',
 };

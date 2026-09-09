@@ -15,6 +15,17 @@ export const money = value => '₹' + Math.round(value).toLocaleString('en-IN');
    The constants still exist twice — here and in store.mjs — because only the
    deposit is configurable today. If the fee ever becomes a venue setting, this
    should read it rather than hold its own copy. */
+/* ── how a payment was verified ──
+   Money is confirmed face to face at this venue: whoever takes it watches it
+   land rather than copying a transaction id off the payer's phone, so no
+   dialog asks for one. The server still wants a reference on anything that is
+   not cash, and the ledger gets a truthful account of the check that actually
+   happened instead of a number nobody typed. Change this and the accounts
+   view's history changes with it — it is the only thing distinguishing a
+   face-to-face collection from an imported one. */
+export const inPersonRef = () => 'In person · '
+  + ((S.user && (S.user.name || S.user.email)) || 'staff');
+
 export const FLOODLIGHT_FROM = 18 * 60;
 export const FLOODLIGHT_FEE = 300;
 export const needsFloodlights = end => end > FLOODLIGHT_FROM;

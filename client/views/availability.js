@@ -1,4 +1,4 @@
-import { DOW, DOWL, END_HOUR, MON, PAY_FORM, PITCHES, START_HOUR } from '../constants.js';
+import { DOW, DOWL, END_HOUR, GROUP_DISCOUNTS, MON, PAY_FORM, PITCHES, PITCH_PALETTE, START_HOUR } from '../constants.js';
 import { clock12, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, relDay, rng12, slotRng12, t12,
   TODAY_DI, toMin } from '../datetime.js';
 import { blockAtTime, bookingAtTime, bookingWindow, bookingWindowAt, chipCls, coverage, esc, FLOODLIGHT_FEE, hbar, holdAtTime, needsFloodlights, priceFor,
@@ -271,10 +271,15 @@ export function countTxt(endMinute){
   /* Through nowMin like everything else on the board: reading the wall clock
      directly here let the countdown and the ring around it disagree, since the
      ring measures elapsed time from the same nowMin the now-line uses. */
-  const left = Math.max(0, Math.round((endMinute - nowMin()) * 60));
+  /* Past the end it counts up rather than sitting on 00:00. A clock frozen at
+     zero says only "time is up"; the number an operator actually needs is how
+     far over the pitch has run, because that is what they are about to charge
+     for or apologise about. The "+" is what marks the turn. */
+  const raw = Math.round((endMinute - nowMin()) * 60);
+  const over = raw < 0, left = Math.abs(raw);
   const hh = Math.floor(left / 3600), mm = Math.floor((left % 3600) / 60), ss = left % 60;
   const pad = value => String(value).padStart(2, '0');
-  return (hh ? `${hh}:${pad(mm)}` : pad(mm)) + `<i>:${pad(ss)}</i>`;
+  return (over ? '+' : '') + (hh ? `${hh}:${pad(mm)}` : pad(mm)) + `<i>:${pad(ss)}</i>`;
 }
 
 /* pathLength normalises the outline to 100 units, so progress is a plain
@@ -365,9 +370,14 @@ function liveFaceHtml(live, { time, detail, contact, from, to }){
     <span class="ev-face-sub">${who}</span></span>`;
 }
 
-function scheduleBubble({ cls, title, di, pitch, start, span, time, detail = '', meta = '', contact = '', from = null, to = null, live = null, lane = null, openRun = false }){
+function scheduleBubble({ cls, title, di, pitch, start, span, time, detail = '', meta = '', contact = '', from = null, to = null, live = null, lane = null, openRun = false, groupColor = null }){
   const [timePx, bandPad] = EV_SCALE[span] || (span < 2 ? [15, 6] : [29, 22]);
-  const tag = meta ? `<small>${esc(meta)}</small>` : '';
+  /* The group tag rides inside the kind label rather than taking space of its
+     own: the card is already tight at an hour, and a dot beside "Counter" reads
+     as which group this is without competing with the state fill, which is the
+     one thing on the card that must never be ambiguous. */
+  const groupDot = groupColor ? `<i class="ev-group" style="background:${esc(groupColor)}"></i>` : '';
+  const tag = (meta || groupDot) ? `<small>${groupDot}${esc(meta)}</small>` : '';
   const onstage = !!live && live.mode !== 'owed' && live.mode !== 'settled';
   /* A running card carries no kind tag: the clock and its two controls own the
      whole width, and the tag was being clipped against the pause button. The
@@ -470,7 +480,8 @@ function scheduleHtml(di, showNow){
     const contact = item.type === 'blocked' ? '' : record.contact || '';
     pieces.push(scheduleBubble({ cls:cls + (selected ? ' sel' : ''), title:(detail ? detail + ' · ' : '') + rng12(record.start, record.end),
       di, pitch:item.pitch, start, span:rowSpan(start, end), time:rng12(record.start, record.end), detail, meta, contact,
-      from:record.start, to:record.end, live, lane:laneOf.get(item) }));
+      from:record.start, to:record.end, live, lane:laneOf.get(item),
+      groupColor:item.type === 'booking' ? record.groupColor : null }));
   });
   hours().forEach(hour => {
     pieces.push(`<span class="hourlbl schedule-hour" style="--grid-row:${rowOf(hour * 60)};--grid-span:2">
@@ -732,9 +743,10 @@ export const dateAddress = offset => {
   const absolute = TODAY_DI + offset;
   return { week:Math.floor(absolute / 7), di:((absolute % 7) + 7) % 7 };
 };
+export const GROUP_RANGE_STEP = 14, GROUP_RANGE_MAX = 84;
 const groupDateOptions = () => {
   const base = daysFromToday(S.weekOffset,S.dayIndex);
-  return Array.from({length:14},(_,index) => {
+  return Array.from({length:S.gRange},(_,index) => {
     const offset = base + index, address = dateAddress(offset), date = dateAt(offset);
     return { offset,...address,date,check:bookingWindowAt(address.week,address.di,S.gPitch,toMin(S.gStart),S.gDur) };
   });
@@ -751,9 +763,15 @@ export const groupValid = () => {
 function groupPanelHtml(){
   const start = toMin(S.gStart), end = start + S.gDur, options = groupDateOptions(), checks = groupChecks();
   const conflicts = checks.filter(item => !item.check.ok), count = S.gDates.length;
-  const perSession = priceFor(S.gPitch, start, end), total = perSession * count;
+  /* Worked out the same way the server will work it out — per session, rounded,
+     then multiplied — so the figure quoted at the counter is the figure booked.
+     Discounting the grand total instead would drift by a rupee or two per date. */
+  const perSession = priceFor(S.gPitch, start, end);
+  const perDiscount = Math.round(perSession * S.gDiscount / 100);
+  const gross = perSession * count, total = (perSession - perDiscount) * count;
   const nameLabel = S.gType === 'Corporate' ? 'Company name' : 'Group name';
-  return `<div class="panel group-panel" role="region" aria-label="Group booking"><div class="panel-head"><div><span class="modal-kicker">Multi-date booking</span>
+  const canExtend = S.gRange < GROUP_RANGE_MAX;
+  return `<div class="panel group-panel" data-scroll-pane="panel" role="region" aria-label="Group booking"><div class="panel-head"><div><span class="modal-kicker">Multi-date booking</span>
     <b class="panel-title">Group booking</b></div><button class="x" data-act="close-group" aria-label="Close group booking form">&times;</button></div>
     <p class="group-intro">Reserve one time across several dates for a company or organised group.</p>
     <span class="dlabel">Booking type</span><div class="optrow group-type">${['Corporate','Group'].map(type =>
@@ -764,14 +782,26 @@ function groupPanelHtml(){
       step="1800" value="${esc(S.gStart)}" data-act="g-start"></label><div><span class="dlabel">Duration</span>
       <div class="group-duration">${[60,90,120,180].map(duration => `<button class="${segCls(S.gDur===duration,true)}"
         data-act="g-dur" data-v="${duration}">${duration < 120 ? duration+'m' : duration/60+'h'}</button>`).join('')}</div></div></div>
-    <div class="group-date-head"><span class="dlabel">Select dates · next 14 days</span>
+    <span class="dlabel group-label">Group colour</span>
+    <div class="group-swatches">${PITCH_PALETTE.map(entry => `<button class="gswatch${S.gColor===entry.hex?' on':''}"
+      style="--sw:${entry.hex}" data-act="g-color" data-v="${entry.hex}" aria-pressed="${S.gColor===entry.hex}"
+      title="${esc(entry.name)}"><span></span></button>`).join('')}</div>
+    <p class="group-hint">${S.gColor ? 'Every booking in this group carries this dot on the board.'
+      : 'Optional — tags every date in this group with one colour on the board.'}</p>
+    <span class="dlabel group-label">Group discount</span>
+    <div class="optrow wide">${GROUP_DISCOUNTS.map(pct => `<button class="${segCls(S.gDiscount===pct,true)}"
+      data-act="g-discount" data-v="${pct}">${pct ? pct + '%' : 'None'}</button>`).join('')}</div>
+    <div class="group-date-head"><span class="dlabel">Select dates · next ${S.gRange} days</span>
       <button data-act="g-clear-dates"${count ? '' : ' disabled'}>Clear</button></div>
     <div class="group-dates">${options.map(option => { const selected=S.gDates.includes(option.offset), conflict=selected&&!option.check.ok,
       blocked=!option.check.ok&&!selected; return `<button class="group-date${selected?' on':''}${conflict?' conflict':''}${blocked?' unavailable':''}"
         data-act="g-date" data-v="${option.offset}" aria-pressed="${selected}" ${blocked?`disabled title="${esc(option.check.reason)}"`:''}>
         <span>${DOW[option.di]}</span><b>${option.date.getDate()} ${MON[option.date.getMonth()]}</b>
         <small>${conflict?'! Conflict':selected?'&#10003; Selected':blocked?'Unavailable':'Available'}</small></button>`; }).join('')}</div>
-    <div class="group-summary${conflicts.length?' conflict':''}"><div><span>${count} session${count===1?'':'s'}</span>
+    ${canExtend ? `<button class="group-more" data-act="g-more">Show ${Math.min(GROUP_RANGE_STEP, GROUP_RANGE_MAX - S.gRange)} more days</button>`
+      : `<p class="group-more-end">Showing the furthest ${GROUP_RANGE_MAX} days.</p>`}
+    <div class="group-summary${conflicts.length?' conflict':''}"><div><span>${count} session${count===1?'':'s'}${
+      count && S.gDiscount ? ` · ${money(gross)} less ${S.gDiscount}%` : ''}</span>
       <b>${count?rng12(start,end):'Choose dates'}</b></div><strong>${count?money(total):'—'}</strong>
       ${conflicts.length?`<p>${conflicts.length} selected date${conflicts.length===1?'':'s'} no longer available.</p>`:''}</div>
     <div class="drule group-details"><label class="dfield"><span class="dlabel">${nameLabel} · required</span>
@@ -866,7 +896,7 @@ export function viewAvailability(){
     ${iconOpt('avail-mode','week',!isDay,'week','One pitch')}</div>${densitySeg}
     <button class="pillbtn secondary" data-act="open-group">+ Group</button>
     <button class="pillbtn" data-act="open-custom">+ Custom<span class="pill-long"> time slot</span></button></div></div>
-    ${isDay?dayGrid:weekGrid}</section><aside class="aside${asidePanel?' has-panel':''}">${asideBody}
+    ${isDay?dayGrid:weekGrid}</section><aside class="aside${asidePanel?' has-panel':''}" data-scroll-pane="aside">${asideBody}
     <div class="loadcard"><div class="cap">${loadCap}</div>${pitchLoad}</div>
     <p class="asidenote">${CAL_ICON}<span>${isDay?dayFree+' of '+dayTotal+' slots open on '+DOW[di]+' '+dayDate.getDate()
       :free+' of '+total+' slots open this week'} &middot; all times local</span></p></aside></main>`;

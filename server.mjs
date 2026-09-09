@@ -1,4 +1,6 @@
 import { createServer } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,11 +21,24 @@ const clientModules = [
   'actions.js', 'api.js', 'constants.js', 'datetime.js', 'domain.js', 'modals.js', 'render.js', 'state.js',
   'views/accounts.js', 'views/alerts.js', 'views/availability.js', 'views/dashboard.js', 'views/sessions.js', 'views/settings.js',
 ];
+/* The phone app is a second front end over the same API, not a second product:
+   it has to be served from this origin or the session cookie (HttpOnly,
+   SameSite=Strict) never reaches it. "/m" is the address a thumb types. */
 const staticFiles = new Map([
   ['/','index.html'], ['/index.html','index.html'], ['/app.js','app.js'], ['/styles.css','styles.css'],
+  ['/m','mobile.html'], ['/mobile.html','mobile.html'],
+  ['/mobile.js','mobile.js'], ['/mobile.css','mobile.css'],
+  /* Installing the phone app to a home screen needs these two by name: the
+     manifest says what the app is called and how it launches, the icons are
+     what the launcher draws. */
+  ['/manifest.webmanifest','manifest.webmanifest'],
+  ...['icon-192.png','icon-512.png','icon-maskable.png','apple-touch-icon.png']
+    .map(file => [`/icons/${file}`, `icons/${file}`]),
   ...clientModules.map(file => [`/client/${file}`, `client/${file}`]),
 ]);
-const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8' };
+const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8',
+  '.css':'text/css; charset=utf-8', '.png':'image/png',
+  '.webmanifest':'application/manifest+json; charset=utf-8' };
 const loginAttempts = new Map();
 const mutationAttempts = new Map();
 const trustProxy = process.env.TRUST_PROXY === '1';
@@ -103,7 +118,8 @@ function requireCsrf(req, user){
   if (!token || token !== user.csrf_token) throw new ProductError(403, 'invalid_csrf', 'The security token is missing or expired.');
   const origin = req.headers.origin;
   if (origin){
-    const proto = trustProxy ? String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim() : 'http';
+    const proto = trustProxy ? String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim()
+      : req.socket && req.socket.encrypted ? 'https' : 'http';
     const expected = `${proto}://${req.headers.host}`;
     if (origin !== expected) throw new ProductError(403, 'invalid_origin', 'Cross-origin changes are not allowed.');
   }
@@ -275,12 +291,22 @@ async function handler(req, res){
   }
 }
 
-const server = createServer(handler);
+/* TLS is opt-in through a key/cert pair on disk. It exists because a browser
+   only treats an origin as secure over HTTPS, and without a secure origin
+   Chrome will not install the phone app to a home screen — it stays a tab with
+   an address bar. Serving the LAN over a locally-trusted certificate is what
+   turns it into something that launches like an app. Plain HTTP stays the
+   default so nothing changes for anyone who has not set these. */
+const TLS_KEY = process.env.TURF_TLS_KEY, TLS_CERT = process.env.TURF_TLS_CERT;
+const secure = Boolean(TLS_KEY && TLS_CERT);
+const server = secure
+  ? createTlsServer({ key:readFileSync(TLS_KEY), cert:readFileSync(TLS_CERT) }, handler)
+  : createServer(handler);
 server.requestTimeout = 15_000;
 server.headersTimeout = 10_000;
 server.keepAliveTimeout = 5_000;
 server.listen(PORT, HOST, () => {
-  console.log(`Turf Operations on http://${HOST}:${PORT}`);
+  console.log(`Turf Operations on ${secure ? 'https' : 'http'}://${HOST}:${PORT}`);
   if (store.db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0)
     console.warn('No users configured. Set TURF_BOOTSTRAP_EMAIL and TURF_BOOTSTRAP_PASSWORD, then restart.');
 });

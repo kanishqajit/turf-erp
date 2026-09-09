@@ -31,6 +31,13 @@
   --lime-on-lime:#3E4A12;  /* type on a lime field */
 
   --paper:#fff;
+  /* --page is the ground the app sits on; --soft is a quiet FILLED control
+     sitting on it. On paper they are the same grey and nothing needed to tell
+     them apart. Turn the page off and they are opposite jobs: the ground goes
+     to the bottom of the stack and every quiet button has to rise off it, so a
+     single token would have made the back arrow, the secondary buttons, the
+     tags and the closed band heads invisible. */
+  --page:#F4F5F0;
   --soft:#F4F5F0;
   --soft2:#F7F8F4;
   --edge:#EAECE4;
@@ -38,8 +45,10 @@
   --edge3:#D5D9CE;
   --rule:#F0F1EC;
 
-  --muted:#8E949B;
-  --muted2:#9AA0A6;
+  /* Both were a shade too pale to read on paper — 3.06:1 and 2.41:1 at the
+     sizes this app sets them. styles.css corrected them; these follow it. */
+  --muted:#63696F;
+  --muted2:#70767D;
   --body:#5E646B;
 
   --d-muted:#8B9199;
@@ -48,10 +57,22 @@
   --red:#E4574B;
   --amber:#E0A21C;         /* the alarm line above a running clock */
   --owed:#BE3B2E;          /* a session that ended without paying */
+  --owed-txt:#BE3B2E;      /* the same debt, set as type rather than a fill */
   --end-bg:#4A1A16;        /* the seat of the end-session button */
-  --fill-deep:#16181C;     /* the running card's ground */
+  --fill-deep:#16181C;     /* the deepest fill: the running clock, a counter sale */
+  --raise:#16181C;         /* the ink surfaces that RISE: header, sheet, panel */
+  --on-fill:#fff;          /* the label knocked out of one */
+  --on-accent:#16181C;     /* type on lime — the same hex in both themes */
+  --band:#ECEEE6;          /* the week grid's alternating rail */
+  --frame:#C9CCC2;         /* the desktop review frame, not the phone */
+  /* Past its end a match is still in play — same card, same two controls — but
+     the count has turned from time left into time owed, so the ground turns
+     with it. Deeper than the unpaid card's red, so the two stay apart. */
+  --over-fill:#4E1A15;
+  --head:var(--lime);      /* the pitch heads, and nothing else in the app */
   --amber-bg:#FFF3D6;
   --amber-line:#F1DFAE;
+  --amber-on-dark:#F1DFAE;  /* amber type on a ground that is dark either way */
   --amber-txt:#8A5A00;
   --done:#B7C86B;
 
@@ -62,7 +83,10 @@
      from this one number — they will drift apart if any of them hard-codes it. */
   --gutter:52px;
 
-  /* the home indicator eats the bottom of the dock on a real handset */
+  /* Launched from the home screen there is no browser chrome, so the status
+     bar sits over the top of the page and the home indicator over the bottom.
+     In a tab both insets are zero and nothing moves. */
+  --safe-t:env(safe-area-inset-top, 0px);
   --safe-b:env(safe-area-inset-bottom, 0px);
 }
 
@@ -72,7 +96,7 @@ html,body{margin:0;padding:0;height:100%}
    body copy — the shift header and the cards come out two sizes too big. */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{
-  background:var(--soft);color:var(--ink);font-family:var(--sans);
+  background:var(--page);color:var(--ink);font-family:var(--sans);
   -webkit-font-smoothing:antialiased;
   -webkit-tap-highlight-color:transparent;
   overscroll-behavior:none;
@@ -86,7 +110,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 /* ─── shell ───────────────────────────────────────────── */
 .m-phone{
   position:relative;width:100%;max-width:460px;margin:0 auto;
-  height:100dvh;background:var(--soft);overflow:hidden;
+  height:100dvh;background:var(--page);overflow:hidden;
   display:flex;flex-direction:column;
 }
 .m-app{flex:1;display:flex;flex-direction:column;min-height:0}
@@ -100,9 +124,16 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .m-sheet-card::-webkit-scrollbar{display:none}
 #mDock{flex:none}
 
+@media (max-width:519px){
+  #mDock{position:fixed;left:0;right:0;bottom:0;z-index:60;max-width:460px;margin:0 auto}
+  /* --dock-h is measured after each paint; the bar's height changes with the
+     collect strip appearing and going. */
+  #mBody{padding-bottom:var(--dock-h,0px)}
+}
+
 /* Desktop review frame. Below this width the app simply fills the viewport. */
 @media (min-width:520px){
-  body{background:#C9CCC2;display:grid;place-items:center}
+  body{background:var(--frame);display:grid;place-items:center}
   .m-phone{
     height:min(880px,calc(100dvh - 48px));border-radius:34px;
     box-shadow:0 30px 70px rgba(0,0,0,.22),0 0 0 1px rgba(0,0,0,.1);
@@ -110,45 +141,60 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 }
 
 /* ─── shift header (home) ─────────────────────────────── */
-.m-shift{background:var(--ink);color:#fff;padding:16px 16px 14px}
+.m-shift{background:var(--raise);color:var(--on-fill);padding:calc(8px + var(--safe-t)) 15px 12px}
+
+/* The line every app has: what this is, and who is signed in. It earns its
+   height by being the only place to sign out from a phone. */
+.m-brand{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.m-brand-mark{
+  flex:none;width:23px;height:23px;border-radius:8px;background:var(--lime);color:var(--on-accent);
+  display:grid;place-items:center;font:700 12px var(--disp);letter-spacing:.04em;
+}
+.m-brand b{
+  flex:1;min-width:0;font:700 13.5px var(--sans);letter-spacing:-.1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.m-avatar{
+  flex:none;width:29px;height:29px;border-radius:50%;border:1.5px solid var(--chrome);
+  background:var(--field);color:#fff;cursor:pointer;
+  font:700 11px var(--sans);letter-spacing:.04em;
+}
+.m-bar-avatar{
+  flex:none;margin-left:auto;width:34px;height:34px;border-radius:50%;
+  border:1.5px solid var(--edge2);background:var(--soft);color:var(--body);cursor:pointer;
+  font:700 12px var(--sans);letter-spacing:.04em;
+}
 .m-shift-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .m-kicker{
   display:flex;align-items:center;gap:7px;
   font:700 10px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--d-muted);
 }
 .m-kicker i{width:7px;height:7px;border-radius:50%;background:var(--lime);display:block;flex:none}
-.m-clock{font:700 34px/1 var(--disp);letter-spacing:-.3px;margin-top:5px}
+.m-clock{font:700 29px/1 var(--disp);letter-spacing:-.3px;margin-top:4px}
 .m-shift-end{display:flex;align-items:center;gap:10px}
-.m-due-total{text-align:right}
+.m-due-total{
+  text-align:right;background:none;border:0;padding:0;cursor:pointer;color:inherit;
+  font-family:var(--sans);
+}
 .m-due-total span{font:700 10px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--d-muted)}
-.m-due-total b{display:block;font:700 22px var(--sans);color:var(--lime);margin-top:3px}
-
-.m-bell{
-  position:relative;flex:none;width:44px;height:44px;border-radius:15px;border:0;
-  background:var(--field);color:#fff;cursor:pointer;display:grid;place-items:center;
-}
-.m-bell .m-badge{
-  position:absolute;top:-5px;right:-5px;min-width:20px;height:20px;padding:0 5px;
-  border-radius:999px;background:var(--lime);color:var(--ink);
-  font:700 11px/20px var(--sans);text-align:center;border:2px solid var(--ink);
-}
+.m-due-total b{display:block;font:700 19px var(--sans);color:var(--lime);margin-top:2px}
 
 /* Venue counters. The pitch strip that used to sit here repeated what the
    slabs below now state outright, so this counts the shift instead. */
-.m-counts{display:flex;gap:6px;margin-top:14px}
+.m-counts{display:flex;gap:6px;margin-top:10px}
 .m-count{
   flex:1;min-width:0;display:flex;align-items:baseline;justify-content:center;gap:5px;
-  background:var(--field);border-radius:13px;padding:10px 6px;
-  font:600 11px var(--sans);color:var(--d-muted);white-space:nowrap;overflow:hidden;
+  background:var(--field);border-radius:12px;padding:7px 6px;
+  font:600 10.5px var(--sans);color:var(--d-muted);white-space:nowrap;overflow:hidden;
 }
-.m-count b{font:700 16px var(--sans);color:#fff}
+.m-count b{font:700 14.5px var(--sans);color:#fff}
 .m-count.is-play b{color:var(--lime)}
-.m-count.is-warn b{color:var(--amber-line)}
+.m-count.is-warn b{color:var(--amber-on-dark)}
 
 /* ─── back header (pushed screens) ────────────────────── */
 .m-bar{
   background:var(--paper);border-bottom:1px solid var(--edge);
-  padding:14px 16px 12px;display:flex;align-items:center;gap:12px;
+  padding:calc(14px + var(--safe-t)) 16px 12px;display:flex;align-items:center;gap:12px;
 }
 .m-back{
   flex:none;width:42px;height:42px;border-radius:14px;border:1px solid var(--edge2);
@@ -190,15 +236,22 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .m-cta{
   flex:1 1 auto;min-width:0;height:31px;border:0;border-radius:11px;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;gap:5px;
-  background:var(--lime);color:var(--ink);font:700 10.5px var(--sans);
+  background:var(--lime);color:var(--on-accent);font:700 10.5px var(--sans);
   padding:0 5px;
 }
 .m-cta>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m-cta>i{flex:none;display:grid;place-items:center;width:14px;height:14px}
 .m-cta>i svg{width:14px;height:14px}
-.m-cta.is-icon{flex:none;width:28px;padding:0}
+.m-cta.is-icon{flex:none;width:26px;padding:0}
 .m-cta.is-quiet{background:var(--soft);color:var(--body)}
 .m-cta.is-paper{background:#fff;color:var(--owed)}
+/* Why the tray has no button: the pitch is not free. */
+.m-tray-note{
+  flex:1;min-width:0;height:31px;border-radius:11px;background:var(--soft);
+  display:flex;align-items:center;justify-content:center;padding:0 6px;
+  font:600 9.5px var(--sans);color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 
 /* ── arriving / checked in ──
    The planning detail demotes to a caption and the cue takes the card: at a
@@ -246,14 +299,28 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 }
 .m-tm-btn svg{width:14px;height:14px}
 .m-tm-btn.is-end{background:var(--end-bg);color:var(--red)}
+.m-tm-btn.is-go{background:var(--lime);color:var(--on-accent)}
+
+/* A held clock is still the card's whole content, but it is not counting — so
+   it recedes rather than shouting a number that is not moving. */
+.m-cell.is-timer.is-paused .m-tm-count{color:var(--d-body)}
+.m-cell.is-timer.is-paused .m-tm-top{color:var(--d-muted)}
+.m-cell.is-timer.is-paused .m-ring-fill{stroke:#4E545B;transition:none}
 
 /* The ring is the card's own outline, not a bar inside it — the countdown and
    how far through it is are one object. */
 .m-ring{position:absolute;inset:0;width:100%;height:100%;fill:none;pointer-events:none}
-.m-ring rect{width:calc(100% - 3px);height:calc(100% - 3px);rx:15px;stroke-width:3}
-.m-ring-track{stroke:var(--chrome)}
+.m-ring rect{x:1.75px;y:1.75px;width:calc(100% - 3.5px);height:calc(100% - 3.5px);rx:14px;stroke-width:3.5}
+/* The track has to be visible or the amber arc reads as a stray line beside the
+   card rather than as the part of a ring that has filled. */
+.m-ring-track{stroke:#383D43}
 .m-ring-fill{stroke:var(--amber);stroke-linecap:round;transition:stroke-dasharray .9s linear}
+.m-cell.is-timer.is-over{background:var(--over-fill)}
+.m-cell.is-timer.is-over .m-ring-track{stroke:#6B2A23}
 .m-cell.is-timer.is-over .m-ring-fill{stroke:var(--red);transition:none}
+.m-cell.is-timer.is-over .m-tm-top{color:var(--red)}
+.m-cell.is-timer.is-over .m-tm-btn{background:#6B2A23}
+.m-cell.is-timer.is-over .m-tm-btn.is-end{background:var(--red);color:#fff}
 
 /* ── ended, still owing ──
    Not a booking any more, a debt. The figure to collect is the largest thing
@@ -276,7 +343,13 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   padding:8px 6px;overflow:hidden;
 }
-.m-cell.is-plain.is-settled{opacity:.52}
+/* Same two colours a booked bubble wears, so an hour does not change colour
+   just because its row happened to open. */
+.m-cell.is-plain.is-app{background:var(--lime);border-color:var(--lime-deep);color:var(--on-accent)}
+.m-cell.is-plain.is-counter{background:var(--fill-deep);border-color:var(--fill-deep);color:var(--on-fill)}
+.m-cell.is-plain.is-counter .m-face-top,
+.m-cell.is-plain.is-counter .m-plain-foot{color:var(--d-body)}
+.m-cell.is-plain.is-settled{opacity:.62}
 .m-plain-who{
   max-width:100%;font:700 12.5px var(--sans);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -284,18 +357,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .m-plain-foot{
   display:flex;align-items:baseline;gap:5px;
   font:600 9.5px var(--sans);color:var(--amber-txt);
-}
-
-/* A booking that runs past its first hour keeps its controls on that hour and
-   leaves a marker on the rest — one session, one set of buttons. */
-.m-cont{
-  height:var(--cell-h);border-radius:15px;background:var(--soft2);
-  display:flex;align-items:center;justify-content:center;gap:6px;padding:0 7px;overflow:hidden;
-}
-.m-cont i{flex:none;width:2px;height:60%;border-radius:2px;background:var(--edge3)}
-.m-cont span{
-  min-width:0;font:600 9.5px var(--sans);color:var(--muted2);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 
 /* progress */
@@ -314,7 +375,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   font:700 11px var(--sans);letter-spacing:.04em;white-space:nowrap;
   background:var(--soft);color:var(--body);
 }
-.m-tag.is-play{background:var(--lime);color:var(--ink)}
+.m-tag.is-play{background:var(--lime);color:var(--on-accent)}
 .m-tag.is-good{background:var(--lime-tint2);color:var(--lime-txt)}
 .m-tag.is-warn{background:var(--paper);color:var(--amber-txt)}
 .m-tag.is-warn2{background:var(--amber-bg);color:var(--amber-txt)}
@@ -329,8 +390,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   display:flex;align-items:center;justify-content:center;text-decoration:none;
   background:var(--soft);color:var(--ink);
 }
-.m-btn.is-lime{background:var(--lime);color:var(--ink)}
-.m-btn.is-ink{background:var(--ink);color:#fff}
+.m-btn.is-lime{background:var(--lime);color:var(--on-accent)}
+.m-btn.is-ink{background:var(--raise);color:var(--on-fill)}
 .m-btn.is-dark{background:var(--chrome);color:#fff}
 .m-btn.is-outline{background:transparent;border:1.5px solid var(--edge3);color:var(--ink)}
 .m-btn.is-ghost{background:transparent;border:1px solid #3A3F45;color:var(--d-body)}
@@ -341,33 +402,121 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .m-btn.is-slim{flex:none;width:auto;height:40px;padding:0 16px;font-size:13.5px;border-radius:13px}
 .m-btn[disabled]{background:var(--chrome);color:var(--d-muted);cursor:not-allowed}
 
-/* ─── dock ────────────────────────────────────────────── */
-.m-dock{
-  background:var(--paper);border-top:1px solid var(--edge);
-  padding:12px 16px calc(14px + var(--safe-b));
-  display:flex;gap:9px;align-items:center;
+/* ─── today, as a list ─────────────────────── */
+.m-opts.is-wrap{flex-wrap:wrap}
+.m-opts.is-wrap .m-opt{flex:1 1 28%}
+.m-trow{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;cursor:pointer;
+  padding:12px 13px;border-radius:20px;background:var(--paper);border:1px solid var(--edge);
+  color:var(--ink);font-family:var(--sans);
 }
-.m-dock-board{
-  flex:1;min-width:0;height:56px;border-radius:20px;cursor:pointer;
-  border:1px solid var(--edge2);background:var(--soft);color:var(--ink);
-  display:flex;align-items:center;justify-content:center;gap:9px;
-  font:700 15px var(--sans);white-space:nowrap;overflow:hidden;
-}
-/* Both labels are variable — "Collect ₹12,400" must not squeeze "Slot board"
-   onto two lines on a 360px handset. */
-.m-dock-collect{
-  flex:1;min-width:0;height:56px;padding:0 14px;border-radius:20px;border:0;
-  background:var(--ink);color:#fff;font:700 15px var(--sans);cursor:pointer;
+.m-trow.is-live{background:var(--raise);border-color:var(--raise);color:var(--on-fill)}
+.m-trow.is-due{background:var(--amber-bg);border-color:var(--amber-line)}
+.m-trow-when{flex:none;width:56px;text-align:center}
+.m-trow-when b{display:block;font:700 14px var(--sans)}
+.m-trow-when small{display:block;font:600 10px var(--sans);color:var(--muted);margin-top:1px}
+.m-trow.is-live .m-trow-when small{color:var(--d-muted)}
+.m-trow-mid{flex:1;min-width:0}
+.m-trow-mid b{
+  display:block;font:700 14.5px var(--sans);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.m-dock-collect.is-clear{background:var(--soft);color:var(--muted);cursor:default}
+.m-trow-mid small{
+  display:block;font:500 11.5px var(--sans);color:var(--muted);margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.m-trow.is-live .m-trow-mid small{color:var(--d-body)}
+.m-trow.is-due .m-trow-mid small{color:var(--amber-txt)}
+.m-trow-end{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.m-trow-end small{font:700 10.5px var(--sans);color:var(--muted)}
+.m-trow.is-due .m-trow-end small{color:var(--amber-txt)}
+.m-trow.is-live .m-trow-end small{color:var(--lime)}
+
+/* The view picker, the date chips and the column names ride together. They are
+   one sticky block rather than three, because the question "which day" and the
+   answer under it must not come apart while scrolling. */
+.m-pinned{
+  position:sticky;top:0;z-index:6;margin:0 -12px;padding:0 12px;
+  background:var(--page);display:flex;flex-direction:column;gap:8px;
+}
+ /* The wrapper already bleeds to the screen edge and pads back in, so its
+    children must not do it a second time. */
+.m-pinned .m-cols{position:static;margin:0;padding:0;box-shadow:none;background:none}
+.m-pinned .m-days{margin:0;padding:0 0 3px}
+.m-pinned .m-filters{padding-top:10px;flex-wrap:nowrap}
+.m-pinned .m-filter{flex:1 1 0;padding:0 4px}
+
+/* One pitch across seven days. The hour gutter is gone: every tile names its
+   own hour, which is what the gutter was for, and its 42px buys the width that
+   makes the label fit. */
+.m-board.is-week .m-cols,
+.m-board.is-week .m-hour{grid-template-columns:repeat(var(--ncols,7),minmax(0,1fr));gap:4px}
+.m-board.is-week .m-hour{--cell-h:40px}
+.m-board.is-week .m-col{padding:4px 2px 5px;border-radius:9px}
+.m-board.is-week .m-col b{font-size:10px;letter-spacing:-.2px}
+.m-board.is-week .m-col small{font-size:11px;color:var(--on-accent);letter-spacing:0}
+.m-bub.is-week{padding:0 2px;border-radius:8px;gap:0}
+.m-bub.is-week b{font:700 10px/1.1 var(--sans)}
+.m-bub.is-week em{font:600 8px/1.1 var(--sans);opacity:.66}
+
+/* Alternate columns take a faint band so the eye has a rail to run down
+   instead of counting tiles across. Only the open ones — the others already
+   carry a colour that means something. */
+.m-board.is-week .m-hour > :nth-child(even).is-free{background:var(--band)}
+
+/* The dates again, at the head of every band. */
+.m-hour.is-restate{--cell-h:auto;padding:1px 0 3px}
+.m-hour.is-restate span{
+  text-align:center;font:700 8.5px var(--sans);letter-spacing:.02em;color:var(--muted2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+
+/* ─── the bottom nav ────────────────────────────────────────────── */
+.m-nav{
+  background:var(--paper);border-top:1px solid var(--edge);
+  padding:7px 6px calc(9px + var(--safe-b));
+  display:grid;grid-template-columns:repeat(5,1fr);gap:2px;
+}
+.m-nav-item{
+  position:relative;min-width:0;border:0;background:none;cursor:pointer;border-radius:14px;
+  padding:7px 2px 6px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  color:var(--muted);font:600 10px var(--sans);
+}
+.m-nav-item i{display:grid;place-items:center;width:22px;height:22px}
+.m-nav-item i svg{width:20px;height:20px}
+.m-nav-item span{
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em;
+}
+/* The current destination is ink on lime — the one place on the nav with a
+   colour, so the answer to "where am I" needs no reading. */
+.m-nav-item.is-on{background:var(--lime);color:var(--on-accent);font-weight:700}
+.m-nav-badge{
+  position:absolute;top:2px;right:calc(50% - 21px);min-width:16px;height:16px;padding:0 4px;
+  border-radius:999px;background:var(--red);color:#fff;
+  font:700 9.5px/16px var(--sans);font-style:normal;text-align:center;
+  border:1.5px solid var(--paper);
+}
+.m-nav-item.is-on .m-nav-badge{border-color:var(--lime)}
+
+/* Money you could take right now, above the nav rather than behind a tab. */
+.m-collect-bar{
+  display:flex;align-items:center;gap:10px;width:100%;cursor:pointer;
+  padding:13px 16px calc(13px);border:0;border-top:1px solid var(--edge);
+  background:var(--raise);color:var(--on-fill);font-family:var(--sans);text-align:left;
+}
+.m-collect-bar i{flex:none;display:grid;place-items:center;color:var(--lime)}
+.m-collect-bar i svg{width:20px;height:20px}
+.m-collect-bar span{flex:1;min-width:0;font:700 16px var(--sans);white-space:nowrap;overflow:hidden}
+.m-collect-bar em{
+  flex:none;font:600 11px var(--sans);font-style:normal;color:var(--d-muted);
+}
 
 /* ─── the board ───────────────────────────────────────── */
 /* Side padding is 12px, not 16 — every pixel taken off the frame goes into the
    three columns, and a card at 87px has none to spare. */
-.m-board{padding:14px 12px 26px;display:flex;flex-direction:column;gap:12px}
+.m-board{padding:0 12px 22px;display:flex;flex-direction:column;gap:10px}
 .m-days{
-  display:flex;gap:7px;overflow-x:auto;padding:0 12px 3px;margin:0 -12px;
+  display:flex;gap:7px;overflow-x:auto;padding:0 12px 3px;margin:14px -12px 0;
   scrollbar-width:none;
 }
 .m-days::-webkit-scrollbar{display:none}
@@ -377,7 +526,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 }
 .m-day small{display:block;font:600 9.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;opacity:.62}
 .m-day b{display:block;font:700 16px var(--sans)}
-.m-day.is-on{background:var(--ink);border-color:var(--ink);color:#fff}
+.m-day.is-on{background:var(--fill-deep);border-color:var(--fill-deep);color:var(--on-fill)}
 
 .m-walkin{
   display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
@@ -399,7 +548,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .m-legend span{display:inline-flex;align-items:center;gap:7px;font:600 12px var(--sans)}
 .m-legend i{width:13px;height:13px;border-radius:4px;display:block;border:1px solid var(--edge2)}
 .m-legend i.is-app{background:var(--lime);border-color:var(--lime-deep)}
-.m-legend i.is-counter{background:var(--ink);border-color:var(--ink)}
+.m-legend i.is-counter{background:var(--fill-deep);border-color:var(--fill-deep)}
 .m-legend i.is-hold{background:var(--lime-tint);border-color:var(--lime-tint)}
 .m-legend i.is-blocked{background:var(--soft)}
 .m-legend i.is-open{background:var(--paper)}
@@ -412,28 +561,40 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
    one and you must change the other. */
 .m-cols{
   position:sticky;top:0;z-index:6;
-  margin:0 -12px;padding:9px 12px 10px;
-  background:var(--paper);border-bottom:1.5px solid var(--edge3);
-  box-shadow:0 8px 14px -8px rgba(16,18,20,.24);
-  display:grid;grid-template-columns:var(--gutter) repeat(3,minmax(0,1fr));gap:7px;align-items:end;
+  margin:0 -12px;padding:8px 12px 9px;
+  /* The board's own ground, not a bar of its own: the chips are what you see,
+     and they read as the top of the grid rather than as a strip above it. It
+     still has to be opaque, because rows scroll underneath it. */
+  background:var(--page);
+  display:grid;grid-template-columns:var(--gutter) repeat(var(--ncols,3),minmax(0,1fr));gap:7px;align-items:end;
 }
 .m-cols-time{
   font:700 8.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;
   color:var(--muted2);text-align:right;padding-bottom:5px;
 }
-.m-col{min-width:0;text-align:center;border-radius:12px;background:var(--soft);padding:6px 4px}
+/* The band is ink so the heads read as chrome rather than as one more row of
+   the grid — that is what separates them, so the name can simply be the name. */
+/* The accent, so the one row naming the pitches is the one row wearing the
+   brand's colour. It does share a fill with an app booking, which is why the
+   head keeps its own row above the grid, its own radius and its own type scale:
+   the separation is positional, not chromatic. Lime is the same hex in both
+   themes, so this head needs no dark value of its own. */
+.m-col{
+  min-width:0;text-align:center;border-radius:11px;background:var(--head);
+  padding:5px 4px 6px;border:0;
+}
 .m-col b{
-  display:block;font:700 12px var(--sans);
+  display:block;font:700 12.5px var(--sans);color:var(--on-accent);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .m-col small{
   display:block;font:600 8.5px var(--sans);letter-spacing:.04em;text-transform:uppercase;
-  color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  color:rgba(22,24,28,.66);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 
-.m-band{display:flex;flex-direction:column;gap:6px}
+.m-band{display:flex;flex-direction:column;gap:5px}
 .m-band-head{
-  display:flex;align-items:center;gap:9px;width:100%;height:42px;padding:0 11px;
+  display:flex;align-items:center;gap:9px;width:100%;height:37px;padding:0 11px;
   border-radius:14px;cursor:pointer;background:var(--soft2);border:1px solid var(--edge);color:var(--ink);
 }
 .m-band-head.is-closed{background:var(--soft)}
@@ -451,8 +612,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 /* One row per hour. Its height is the only thing that changes when the now line
    arrives, so nothing shifts sideways under a thumb. */
 .m-hour{
-  --cell-h:50px;position:relative;
-  display:grid;grid-template-columns:var(--gutter) repeat(3,minmax(0,1fr));gap:7px;align-items:center;
+  --cell-h:46px;position:relative;
+  display:grid;grid-template-columns:var(--gutter) repeat(var(--ncols,3),minmax(0,1fr));gap:6px;align-items:center;
 }
 .m-hour.is-open{--cell-h:138px}
 .m-hourlbl{
@@ -468,13 +629,13 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
   border:1px solid var(--edge2);background:var(--paper);color:var(--ink);
   white-space:nowrap;overflow:hidden;
 }
-.m-bub b{font:700 13px/1 var(--sans)}
+.m-bub b{font:700 12.5px/1 var(--sans)}
 /* The channel rides with the status word rather than taking a line of its own —
    an 87px cell has room for one secondary line, not two. */
 .m-bub em{font:600 9.5px/1 var(--sans);font-style:normal;letter-spacing:.04em;opacity:.72}
 .m-bub.is-tall b{font-size:15px}
-.m-bub.is-booked.is-app{background:var(--lime);border-color:var(--lime-deep);color:var(--ink)}
-.m-bub.is-booked.is-counter{background:var(--ink);border-color:var(--ink);color:#fff}
+.m-bub.is-booked.is-app{background:var(--lime);border-color:var(--lime-deep);color:var(--on-accent)}
+.m-bub.is-booked.is-counter{background:var(--fill-deep);border-color:var(--fill-deep);color:var(--on-fill)}
 .m-bub.is-hold{background:var(--lime-tint);border-color:var(--lime-tint);color:var(--lime-txt3)}
 .m-bub.is-blocked{background:var(--soft);border-color:var(--soft);color:var(--muted2)}
 .m-bub.is-blocked b{text-decoration:line-through}
@@ -487,12 +648,19 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .m-now{
   position:absolute;z-index:5;left:calc(var(--gutter) + 7px);right:0;
   top:calc(var(--frac) * 100%);height:2px;border-radius:999px;background:var(--red);
-  box-shadow:0 0 0 1.5px rgba(255,255,255,.8);pointer-events:none;
+  pointer-events:none;
 }
 .m-now::before{
   content:"";position:absolute;left:-4px;top:50%;width:9px;height:9px;border-radius:50%;
-  background:var(--red);border:2px solid var(--paper);transform:translateY(-50%);
+  background:var(--red);transform:translateY(-50%);
 }
+/* The line crosses everything, cards included. It was tucked behind them so it
+   would not cut a countdown in half, but on an open row that left it showing
+   only in the gutter and two 7px gaps — which is not a line anyone can see. It
+   carries a light halo so it reads as something laid over the card rather than
+   a rule struck through it. */
+.m-hour.is-open .m-cell,.m-hour.is-open .m-bub{position:relative;z-index:2}
+
 .m-now-lbl{
   position:absolute;right:calc(100% + 9px);top:50%;transform:translateY(-50%);
   padding:2px 5px;border-radius:6px;background:var(--paper);color:var(--red);
@@ -502,7 +670,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 
 /* ─── forms on dark ───────────────────────────────────── */
 .m-pad{padding:14px 16px 26px;display:flex;flex-direction:column;gap:14px}
-.m-panel{background:var(--ink);color:#fff;border-radius:24px;padding:18px 16px}
+.m-panel{background:var(--raise);color:var(--on-fill);border-radius:24px;padding:18px 16px}
 .m-label{
   display:block;font:700 10px var(--sans);letter-spacing:.1em;text-transform:uppercase;
   color:var(--d-muted);margin-bottom:6px;
@@ -522,13 +690,129 @@ input.m-field[type=time]{font:700 17px var(--sans);color-scheme:dark}
   font:600 12.5px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   background:var(--field);color:var(--d-muted);
 }
-.m-opt.is-on{background:#fff;color:var(--ink);font-weight:700}
+.m-opt.is-on{background:var(--on-fill);color:var(--on-accent);font-weight:700}
+
+/* .m-opt is dressed for a dark sheet — a dark pill with grey type. Put that on
+   the light page and every unselected filter reads as a disabled button. On the
+   page they take the day-chip treatment instead: paper with an ink outline,
+   filled ink when chosen. */
+.m-filters{display:flex;flex-wrap:wrap;gap:7px}
+.m-filter{
+  flex:1 1 28%;min-width:0;height:40px;padding:0 8px;border-radius:13px;cursor:pointer;
+  border:1.5px solid var(--edge3);background:var(--paper);color:var(--body);
+  font:600 12.5px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.m-filter.is-on{background:var(--fill-deep);border-color:var(--fill-deep);color:var(--on-fill);font-weight:700}
+/* A choice that has to state the minute it would use needs two lines — and a
+   button is inline-block by default, so it needs to be told it is a column. */
+.m-opt.is-two{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;height:54px;
+}
+.m-opt.is-two b{font:700 12.5px var(--sans)}
+.m-opt.is-two i{font:600 11px var(--sans);font-style:normal;opacity:.72}
+.m-opt[disabled]{opacity:.45;cursor:not-allowed}
+
+.m-stepper{display:flex;align-items:center;gap:9px}
+.m-step{
+  flex:none;width:46px;height:46px;border-radius:15px;border:0;cursor:pointer;
+  background:var(--field);color:#fff;font:700 20px/1 var(--sans);
+}
+.m-step[disabled]{opacity:.35;cursor:not-allowed}
+.m-stepper-now{
+  flex:1;height:46px;border-radius:15px;background:var(--chrome);color:#fff;
+  display:grid;place-items:center;font:700 17px var(--sans);font-variant-numeric:tabular-nums;
+}
 .m-quote{font:700 17px var(--sans);color:var(--lime);margin-top:12px}
 .m-hr{border-top:1px solid var(--chrome);margin:14px 0}
 .m-banner{
   background:var(--lime-tint2);border:1px solid var(--lime-deep);border-radius:20px;
   padding:15px 16px;font:700 14px var(--sans);color:var(--lime-txt);
 }
+
+/* ─── signing in, and when the server says no ──────── */
+.m-auth{
+  min-height:100%;display:grid;place-items:center;
+  padding:calc(24px + var(--safe-t)) 18px calc(24px + var(--safe-b));
+}
+.m-auth-card{
+  width:100%;max-width:360px;background:var(--raise);color:var(--on-fill);border-radius:26px;padding:22px 20px 24px;
+}
+.m-mark{
+  width:46px;height:46px;border-radius:15px;background:var(--lime);color:var(--on-accent);
+  display:grid;place-items:center;font:700 17px var(--disp);letter-spacing:.06em;margin-bottom:16px;
+}
+.m-auth-card h1{font:700 30px/1.05 var(--disp);letter-spacing:-.3px;margin:4px 0 0}
+.m-auth-card p{font:500 13px/1.5 var(--sans);color:var(--d-body);margin:6px 0 4px}
+.m-auth-card .m-btn{margin-top:16px}
+
+/* A phone loses signal in a stairwell. A write that failed has to say so, not
+   leave a button looking as though it worked. */
+.m-alert{
+  margin-top:14px;padding:11px 13px;border-radius:14px;
+  background:var(--amber-bg);border:1px solid var(--amber-line);
+  font:600 12.5px/1.45 var(--sans);color:var(--amber-txt);
+}
+.m-alert.is-page{margin:14px 12px 0}
+
+/* ─── money ─────────────────────────────── */
+/* The number a shift ends on, at the size a number that gets counted against
+   deserves. Its per-tender split sits under it because that is how a till is
+   actually reconciled — one drawer, three tenders, three figures to match. */
+.m-till{font:800 34px/1 var(--sans);letter-spacing:-.8px;color:var(--lime);margin-top:6px}
+.m-till.is-due{color:var(--amber-on-dark)}
+.m-quote small{display:block;font:500 11.5px var(--sans);color:var(--lime-txt3);margin-top:3px}
+
+.m-mrow{
+  display:flex;flex-direction:column;gap:5px;padding:13px 14px;border-radius:20px;
+  background:var(--paper);border:1px solid var(--edge);
+}
+.m-mrow.is-due{background:var(--amber-bg);border-color:var(--amber-line)}
+.m-mrow-top{display:flex;align-items:center;gap:9px}
+.m-mrow-top b{
+  flex:1;min-width:0;font:700 15.5px var(--sans);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+/* An amber pill on an amber row is not a pill. */
+.m-mrow.is-due .m-tag{background:var(--paper);color:var(--amber-txt)}
+.m-mrow-sub{font:500 12px var(--sans);color:var(--body)}
+.m-mrow.is-due .m-mrow-sub{color:var(--amber-txt)}
+.m-mrow-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:3px}
+.m-mrow-foot>span{
+  min-width:0;font:600 12px var(--sans);color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.m-mrow.is-due .m-mrow-foot>span{color:var(--amber-txt)}
+
+/* Payment events behind a balance. The ledger is append-only, so a corrected
+   row shows both the payment and the reversal rather than a netted figure. */
+.m-mrow-hist{
+  min-width:0;display:flex;align-items:baseline;gap:6px;padding:0;border:0;background:none;
+  cursor:pointer;font:600 12px var(--sans);color:var(--muted);text-align:left;
+}
+.m-mrow.is-due .m-mrow-hist{color:var(--amber-txt)}
+.m-mrow-hist em{font:700 10.5px var(--sans);font-style:normal;color:var(--body);white-space:nowrap}
+.m-hist{
+  display:flex;flex-direction:column;gap:4px;margin-top:9px;padding-top:9px;
+  border-top:1px solid var(--edge2);
+}
+.m-mrow.is-due .m-hist{border-top-color:var(--amber-line)}
+.m-hist-row{display:flex;align-items:baseline;gap:8px;font-family:var(--sans)}
+.m-hist-row b{flex:none;width:64px;font:700 12px var(--sans);color:var(--lime-txt)}
+.m-hist-row.is-back b{color:var(--red)}
+.m-hist-row span{flex:none;font:600 11px var(--sans);color:var(--body)}
+.m-hist-row em{
+  flex:1;min-width:0;font:500 11px var(--sans);font-style:normal;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.m-hist-none{font:500 11.5px var(--sans);color:var(--muted)}
+
+/* A settled cell keeps a chip, so its face stops short of the tray. */
+.m-cellface.is-flat{padding:8px 6px 40px;justify-content:center}
+.m-cta.is-quiet{background:var(--soft);color:var(--body)}
+.m-cell.is-plain.is-counter .m-cta.is-quiet{background:var(--chrome);color:#fff}
+.m-btn.is-outline.is-slim{border:1.5px solid var(--edge3);background:transparent}
+.m-mrow.is-due .m-btn.is-outline.is-slim{border-color:var(--amber-line);color:var(--amber-txt)}
 
 /* ─── reminders ───────────────────────────────────────── */
 .m-groups{padding:14px 16px 26px;display:flex;flex-direction:column;gap:18px}
@@ -550,12 +834,13 @@ input.m-field[type=time]{font:700 17px var(--sans);color-scheme:dark}
 .m-sheet{position:absolute;inset:0;z-index:80;display:flex;flex-direction:column;justify-content:flex-end}
 .m-scrim{position:absolute;inset:0;border:0;background:rgba(16,18,20,.5);backdrop-filter:blur(2px);cursor:pointer}
 .m-sheet-card{
-  position:relative;background:var(--ink);color:#fff;border-radius:30px 30px 0 0;
+  position:relative;background:var(--raise);color:var(--on-fill);border-radius:30px 30px 0 0;
   padding:12px 18px calc(30px + var(--safe-b));max-height:90%;overflow-y:auto;
-  animation:m-rise .22s ease-out;
 }
+/* Only on the way in. A repaint is not an opening. */
+.m-sheet-card.is-new{animation:m-rise .22s ease-out}
 @keyframes m-rise{from{transform:translateY(18px);opacity:.4}to{transform:none;opacity:1}}
-@media (prefers-reduced-motion:reduce){.m-sheet-card{animation:none}}
+@media (prefers-reduced-motion:reduce){.m-sheet-card.is-new{animation:none}}
 .m-grip{width:44px;height:4px;border-radius:3px;background:#3A3F45;margin:0 auto 14px}
 .m-sheet-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .m-kick{font:700 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--lime)}
@@ -580,11 +865,152 @@ input.m-field[type=time]{font:700 17px var(--sans);color-scheme:dark}
 .m-upi{background:var(--lime);border-radius:24px;padding:20px 18px;margin-top:16px;text-align:center}
 .m-qr{
   width:136px;height:136px;margin:0 auto;border-radius:12px;
-  border:6px solid var(--ink);box-sizing:content-box;background-blend-mode:multiply;
+  border:6px solid var(--on-accent);box-sizing:content-box;background-blend-mode:multiply;
   background:
-    conic-gradient(from 0deg at 25% 25%, var(--ink) 0 25%, transparent 0 100%),
-    repeating-linear-gradient(90deg, var(--ink) 0 8px, transparent 8px 16px),
-    repeating-linear-gradient(0deg, var(--ink) 0 8px, transparent 8px 16px);
+    conic-gradient(from 0deg at 25% 25%, var(--on-accent) 0 25%, transparent 0 100%),
+    repeating-linear-gradient(90deg, var(--on-accent) 0 8px, transparent 8px 16px),
+    repeating-linear-gradient(0deg, var(--on-accent) 0 8px, transparent 8px 16px);
 }
-.m-upi b{display:block;font:700 15px var(--sans);color:var(--ink);margin-top:10px}
+.m-upi b{display:block;font:700 15px var(--sans);color:var(--on-accent);margin-top:10px}
 .m-upi span{display:block;font:500 12.5px var(--sans);color:var(--lime-on-lime);margin-top:2px}
+
+/* ═══ SCREEN: settings ═════════════════════════════════ */
+/* Pale cards on the pale page, like the money screen — this is a reading
+   screen with a few switches on it, not a form. */
+.m-set{display:flex;flex-direction:column;gap:12px;padding:14px 12px 22px}
+.m-card{background:var(--paper);border:1px solid var(--edge);border-radius:20px;padding:14px 14px 16px}
+.m-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:4px}
+.m-card-head h2{font:700 15px var(--sans);letter-spacing:-.1px}
+.m-card-head span{font:600 10px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--muted2)}
+.m-card p{font:500 12.5px/1.45 var(--sans);color:var(--body);margin-top:6px}
+.m-card .m-filters{margin-top:12px}
+/* A row that opens something else: the label, a value, a chevron. */
+.m-setrow{
+  display:flex;align-items:center;gap:10px;width:100%;cursor:pointer;text-align:left;
+  background:none;border:0;border-top:1px solid var(--rule);padding:12px 0 11px;
+  font-family:var(--sans);color:inherit;
+}
+.m-setrow:first-of-type{border-top:0}
+.m-setrow-txt{flex:1;min-width:0}
+.m-setrow-txt b{display:block;font:700 13.5px var(--sans)}
+.m-setrow-txt small{display:block;font:500 11.5px/1.4 var(--sans);color:var(--muted);margin-top:2px}
+.m-setrow-val{flex:none;font:700 13px var(--sans);color:var(--body)}
+.m-setrow-val.is-warn{color:var(--owed-txt)}
+.m-setrow i{flex:none;color:var(--muted2);font-style:normal;font-weight:700}
+/* The deposit editor: managers get the field, everyone else gets the number. */
+.m-money-edit{display:flex;gap:8px;margin-top:10px}
+.m-money-edit .m-field{flex:1;min-width:0}
+.m-money-edit .m-btn{flex:none;width:auto;padding:0 16px}
+/* Fields live in dark panels everywhere else in this app; here one sits on
+   paper and has to say where its edges are. */
+.m-card .m-field{background:var(--soft2);border:1px solid var(--edge2);color:var(--ink)}
+.m-card .m-label{color:var(--muted)}
+/* .m-kvs is dressed for a dark sheet: a chrome rule and grey keys. On paper
+   the rule goes black and the keys drop to 3:1, so both are restated. */
+.m-card .m-kvs{border-top-color:var(--edge)}
+.m-card .m-kv span{color:var(--muted)}
+.m-card .m-kv{padding:9px 0;font-size:13.5px}
+.m-ver{text-align:center;font:500 11px var(--sans);color:var(--muted2);padding:2px 0 6px}
+
+/* The bell moved out of the dock when settings took its place; it belongs on
+   the shift header, which is where a count of things needing a decision reads
+   as a count rather than a destination. */
+.m-bell{
+  position:relative;flex:none;width:29px;height:29px;border-radius:50%;
+  border:1.5px solid var(--chrome);background:var(--field);color:var(--on-fill);
+  display:grid;place-items:center;cursor:pointer;
+}
+.m-bell svg{width:15px;height:15px}
+.m-bell em{
+  position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;
+  border-radius:999px;background:var(--red);color:#fff;
+  font:700 10px/16px var(--sans);font-style:normal;text-align:center;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DARK MODE — [data-theme="dark"]
+   The console's palette, hex for hex (styles.css), because the two are one
+   product and a shift that starts at the counter and continues on the phone
+   should not change colour on the way. Surfaces step by lightness alone; the
+   lime is untouched, being the one thing on screen with a colour.
+
+   The theme attribute is always written by mobile.js — "system" is resolved
+   there against prefers-color-scheme rather than duplicating this block under
+   a media query.
+   ═══════════════════════════════════════════════════════ */
+[data-theme="dark"]{
+  /* An elevation ladder, darkest at the bottom. Nothing in here is a border
+     doing a surface's job — things separate because they are lighter than what
+     they sit on, which is the whole grammar of a dark screen. */
+  --page:#000;              /* the ground: nothing under it, so it is black */
+  --soft2:#121417;          /* the faintest lift: band heads, a well on a card */
+  --paper:#1D2024;          /* a card, a bubble, a row */
+  --soft:#23262B;           /* a quiet filled control ON one of those */
+  --raise:#2B2F35;          /* the ink surfaces: header, sheet, panel, live row */
+  /* These two were the deepest things on screen; against a black page there is
+     no room under it, so they become the darkest surface ABOVE the ground and
+     keep their meaning by staying well below a card. */
+  --fill-deep:#0C0E11;      /* the running clock, and a counter sale */
+
+  --ink:#F4F5F3;            /* the strongest TEXT; the fills are above */
+  --body:#C2C6CB;
+  --muted:#9298A0;
+  --muted2:#8B9199;
+  --d-muted:#9298A0;
+  --d-body:#C2C6CB;
+
+  /* Borders stop drawing boxes. --edge matches the surface it outlines, so a
+     card is a block of colour; only the ones that still carry meaning — the
+     ring on an unselected chip — keep a value you can see. */
+  --edge:#1D2024;
+  --edge2:#24272C;
+  --edge3:#3A3F46;
+  --rule:#26292E;
+  --chrome:#33383F;         /* a secondary button inside a raised panel */
+  --field:#262A30;          /* an input well inside one */
+
+  --lime-pale:#232B14;      /* the pale lime surfaces become tinted darks */
+  --lime-tint:#2D3818;
+  --lime-tint2:#2A3416;
+  --lime-txt:#C4E24A;
+  --lime-txt3:#B9D653;
+  /* A plate for money that is late. Straight off the console it is #33260B,
+     which is a saturated brown: on a desk it is one row among many, on a phone
+     it is half the screen and reads as dirt. Same hue, most of the saturation
+     out, so it sits a step above the card rather than shouting over it — the
+     amber that carries the meaning is the type and the tag. */
+  --amber-bg:#282017;
+  --amber-line:#3D3323;
+  --amber-txt:#E8B94A;
+  --owed-txt:#F0897C;
+  --band:#141619;           /* the week rail reads as a groove, not a stripe */
+  --frame:#000;
+  color-scheme:dark;
+}
+/* Selected chips were an ink fill on a pale ground: the deepest thing on the
+   page. Inverted, a near-black chip against lighter siblings reads as the one
+   that is switched OFF. The console answered this the same way — the accent
+   carries the pressed state in dark, because it is the only value that still
+   rises. */
+/* The shift bar is ink on paper because the page under it is pale. Turn the
+   page off and it has nothing to contrast with: raised, it becomes the largest
+   and lightest thing on screen, and the chrome outweighs the board. So in this
+   theme it IS the page, and the grid floats on it. */
+[data-theme="dark"] .m-shift{background:var(--page)}
+[data-theme="dark"] .m-day.is-on,
+[data-theme="dark"] .m-filter.is-on{
+  background:var(--lime);border-color:var(--lime);color:var(--on-accent)}
+/* A blocked hour is a hole in the grid. Its fill is --soft, which on paper is
+   below the card and in this theme is above it — so here it is stated as its
+   own recess rather than borrowed from a control. */
+[data-theme="dark"] .m-bub.is-blocked,
+[data-theme="dark"] .m-legend i.is-blocked{background:#101216;border-color:#101216}
+/* A counter sale is the one bubble darker than the grid it sits in, so it needs
+   an edge to stay a bubble rather than a gap. */
+[data-theme="dark"] .m-bub.is-booked.is-counter,
+[data-theme="dark"] .m-cell.is-plain.is-counter{border-color:#2E3238}
+/* Raised things cast; on paper this would be grime, in the dark it is the only
+   other cue that something is in front. */
+[data-theme="dark"] .m-sheet-card{box-shadow:0 -14px 44px rgba(0,0,0,.62)}
+[data-theme="dark"] .m-panel,
+[data-theme="dark"] .m-card{box-shadow:0 2px 14px rgba(0,0,0,.35)}

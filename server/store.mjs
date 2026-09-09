@@ -9,7 +9,10 @@ export const PITCHES = [
   { name:'Main Ground', rate:3200 },
 ];
 export const OPEN_MIN = 6 * 60;
-export const CLOSE_MIN = 22 * 60;
+/* Trading hours. This is the one the API enforces — client/constants.js and
+   mobile.js draw boards from their own copies, so all three move together or
+   the board offers an hour that createBookings() then rejects. */
+export const CLOSE_MIN = 24 * 60;
 const ROLES = { operator:1, manager:2, owner:3 };
 
 export class ProductError extends Error {
@@ -69,6 +72,15 @@ function validateWindow(input){
   return { date, pitch, start, end };
 }
 
+/* The colours a group booking may be tagged with. This is the client's accent
+   palette restated on the server rather than trusted from the request: a hex
+   arriving from the counter would otherwise let anyone paint a card any colour,
+   including ones with no readable foreground. A test holds the two lists
+   together, the same way it does for pitch names and rates. */
+export const GROUP_COLORS = ['#006B3C','#C8102E','#69359C','#0B6E6E','#1E3A6E','#C1541C',
+  '#7A2048','#3D2C8D','#5B6B1E','#7A1F2B','#8A5A11','#2F5673',
+  '#A6215B','#A24B2E','#4A5568','#35507A'];
+
 function priceFor({ pitch, start, end }){
   return Math.round(PITCHES[pitch].rate * (end - start) / 60 + (end > 18 * 60 ? 300 : 0));
 }
@@ -120,6 +132,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       kind TEXT NOT NULL DEFAULT 'standard' CHECK(kind IN ('standard','custom','group')),
       group_type TEXT,
       group_id TEXT,
+      group_color TEXT,
       status TEXT NOT NULL DEFAULT 'upcoming' CHECK(status IN ('upcoming','running','done','noshow','cancelled')),
       started_at INTEGER,
       ended_at INTEGER,
@@ -195,6 +208,8 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
   const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(column => column.name));
   if (!userColumns.has('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
   if (!userColumns.has('password_changed_at')) db.exec('ALTER TABLE users ADD COLUMN password_changed_at TEXT');
+  const bookingColumns = new Set(db.prepare('PRAGMA table_info(bookings)').all().map(column => column.name));
+  if (!bookingColumns.has('group_color')) db.exec('ALTER TABLE bookings ADD COLUMN group_color TEXT');
   const paymentColumns = new Set(db.prepare('PRAGMA table_info(payment_events)').all().map(column => column.name));
   if (!paymentColumns.has('reference')) db.exec("ALTER TABLE payment_events ADD COLUMN reference TEXT NOT NULL DEFAULT ''");
   if (!paymentColumns.has('idempotency_key')) db.exec('ALTER TABLE payment_events ADD COLUMN idempotency_key TEXT');
@@ -286,19 +301,33 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
     const team = clean(input.team, 120), contact = clean(input.contact, 80);
     if (!team || !validContact(contact)) fail(400, 'invalid_customer', 'Name/team and a contact containing 8 to 15 digits are required.');
     const kind = ['standard','custom','group'].includes(input.kind) ? input.kind : 'standard';
+    const groupColor = kind === 'group' && GROUP_COLORS.includes(input.groupColor) ? input.groupColor : null;
+    /* The discount arrives as a percentage and the money is worked out here, off
+       this tier's own price: a client that sent an amount could send any amount.
+       Authority matches the discount taken at payment time rather than inventing
+       a second policy for the same act — a manager may grant one, and past a
+       fifth of the booking it is the owner's call. */
+    const totalAmount = priceFor(window);
+    const pct = kind === 'group' ? Math.max(0, Math.min(50, Math.round(Number(input.discountPct) || 0))) : 0;
+    const discountAmount = Math.round(totalAmount * pct / 100);
+    if (discountAmount > 0){
+      requireRole(actor, 'manager');
+      if (pct > 20 && actor.role !== 'owner') fail(403, 'discount_limit', 'Discounts above 20% require owner approval.');
+    }
     return { ...window, id:randomUUID(), team, contact, notes:clean(input.notes, 500),
       source:'counter', kind,
       groupType:kind === 'group' ? clean(input.groupType, 30) : null,
       groupId:kind === 'group' ? clean(input.groupId, 80) || randomUUID() : null,
-      totalAmount:priceFor(window), createdBy:actor.id };
+      groupColor, discountAmount,
+      totalAmount, createdBy:actor.id };
   }
 
   function insertBooking(b, actor){
     const stamp = isoNow();
     db.prepare(`INSERT INTO bookings
-      (id,date,pitch,start,end,team,contact,notes,source,kind,group_type,group_id,status,total_amount,created_by,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.id,b.date,b.pitch,b.start,b.end,b.team,b.contact,b.notes,
-      b.source,b.kind,b.groupType,b.groupId,'upcoming',b.totalAmount,b.createdBy,stamp,stamp);
+      (id,date,pitch,start,end,team,contact,notes,source,kind,group_type,group_id,group_color,status,total_amount,discount_amount,created_by,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.id,b.date,b.pitch,b.start,b.end,b.team,b.contact,b.notes,
+      b.source,b.kind,b.groupType,b.groupId,b.groupColor,'upcoming',b.totalAmount,b.discountAmount || 0,b.createdBy,stamp,stamp);
     audit(actor, 'booking.created', 'booking', b.id, null, b);
   }
 
@@ -325,7 +354,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
     const paid = Number(row.collected || 0), due = Math.max(0, row.total_amount - row.discount_amount - paid);
     return { id:row.id, date:row.date, pitch:row.pitch, start:row.start, end:row.end,
       team:row.team, contact:row.contact, notes:row.notes, source:row.source, kind:row.kind,
-      groupType:row.group_type, groupId:row.group_id, status:row.status,
+      groupType:row.group_type, groupId:row.group_id, groupColor:row.group_color, status:row.status,
       startedAt:row.started_at, endedAt:row.ended_at, amount:row.total_amount,
       discount:row.discount_amount, collected:paid,
       collectedByMode:{ Cash:Number(row.collected_cash || 0), UPI:Number(row.collected_upi || 0), Card:Number(row.collected_card || 0) },
@@ -482,6 +511,17 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       if (!before) fail(404, 'not_found', 'Booking not found.');
       assertVersion(before, expectedVersion);
       if (before.status === status) return before;
+      /* One pitch, one match. A session that has run past its booked end has
+         not freed the grass — the ball is still on it — so the next hour cannot
+         start until the last one is closed. Without this the board grew two
+         live clocks on the same pitch and two bills at once, and no screen
+         could say which team was actually playing. */
+      if (status === 'running'){
+        const busy = db.prepare(`SELECT team FROM bookings
+          WHERE date=? AND pitch=? AND status='running' AND id<>?`).get(before.date, before.pitch, id);
+        if (busy) fail(409, 'pitch_busy',
+          `${PITCHES[before.pitch].name} still has ${busy.team} in play. End that session first.`);
+      }
       const normal = (before.status === 'upcoming' && ['running','noshow'].includes(status))
         || (before.status === 'running' && status === 'done');
       /* Counter reality: whoever presses the button is standing in front of the

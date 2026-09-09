@@ -45,8 +45,8 @@ export function refundDialogHtml(){
   const booking = S.accounts.find(item => item.id === S.refundAsk) || S.bookings.find(item => item.id === S.refundAsk);
   if (!booking) return '';
   const available=Number(booking.collectedByMode?.[S.refundPayMode] || 0);
-  const value = Math.max(0, parseInt(S.refundVal,10) || 0),referenceOk=S.refundPayMode==='Cash'||S.refundReference.trim().length>=4;
-  const canSave = value > 0 && value <= available && S.refundReason.trim().length >= 5 && referenceOk;
+  const value = Math.max(0, parseInt(S.refundVal,10) || 0);
+  const canSave = value > 0 && value <= available && S.refundReason.trim().length >= 5;
   const quick = [...new Set([available, Math.round(available / 2)].filter(amount => amount > 0))]
     .map(amount => `<button class="${segCls(value === amount,true)}" data-act="refund-quick" data-v="${amount}"
       style="height:38px;border-radius:13px">${amount === available ? 'Full ' : ''}${money(amount)}</button>`).join('');
@@ -59,9 +59,7 @@ export function refundDialogHtml(){
       style="height:38px;border-radius:13px"${amount>0?'': ' disabled'}>${mode} · ${money(amount)}</button>`;}).join('')}</div>
     <label style="display:block;margin-top:14px"><span class="dlabel">Refund amount · up to ${money(available)} via ${esc(S.refundPayMode)}</span>
       <input class="dinput amount" id="refund-val" data-act="refund-val" value="${esc(S.refundVal)}" inputmode="numeric" placeholder="0"></label>
-    <div class="optrow" style="margin-top:9px">${quick}</div>${S.refundPayMode!=='Cash'?`<label style="display:block;margin-top:12px">
-    <span class="dlabel">${esc(S.refundPayMode)} refund reference · required</span><input class="dinput" id="refund-reference" data-act="refund-reference"
-      value="${esc(S.refundReference)}" placeholder="Transaction or receipt reference"></label>`:''}<label style="display:block;margin-top:12px">
+    <div class="optrow" style="margin-top:9px">${quick}</div><label style="display:block;margin-top:12px">
     <span class="dlabel">Reason · manager approval required</span><input class="dinput" id="refund-reason" data-act="refund-reason"
       value="${esc(S.refundReason)}" placeholder="Why is this account being refunded?"></label>
     <p class="dnote" style="margin-top:12px">This creates an auditable refund event. Release the booking separately after its net collected amount reaches zero.</p>

@@ -12,10 +12,10 @@ export const S = {
   formOpen:false, form:blankForm(), blockOpen:false, blockReason:'', holdPct:0,
   confirm:null, dur:60, startOffset:0,
   focusSession:null, timerAsk:null, timerAt:null, doneAsk:null, blockDetail:null,
-  advAsk:null, advVal:'', advMode:'advance', advPayMode:'Cash', advReason:'', advReference:'',
+  advAsk:null, advVal:'', advMode:'advance', advPayMode:'Cash', advReason:'',
   advCash:'', advUpi:'',
   accountFocus:null, accountHistory:null, accountSearch:'', accountStatus:'open', accountFrom:'', accountTo:'',
-  refundAsk:null, refundVal:'', refundPayMode:'Cash', refundReason:'', refundReference:'',
+  refundAsk:null, refundVal:'', refundPayMode:'Cash', refundReason:'',
   pendingKeys:{},
   actionAsk:null, actionReason:'',
   staffAsk:null, staffReason:'',
@@ -23,7 +23,7 @@ export const S = {
   currentPassword:'', replacementPassword:'', confirmPassword:'', passwordError:'',
   customOpen:false, cDay:TODAY_DI, cStart:'17:30', cDur:60, cName:'', cPhone:'', cPay:'Payment at venue',
   groupOpen:false, gType:'Corporate', gPitch:0, gStart:'11:00', gDur:90,
-  gDates:[], gName:'', gPhone:'', gNotes:'', gPay:'Payment at venue',
+  gDates:[], gRange:14, gColor:null, gDiscount:0, gName:'', gPhone:'', gNotes:'', gPay:'Payment at venue',
 };
 
 const ROLE_LEVEL = { operator:1, manager:2, owner:3 };

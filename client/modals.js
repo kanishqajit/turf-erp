@@ -106,9 +106,7 @@ function advanceDialogHtml(){
   const cash=Math.max(0,parseInt(S.advCash,10)||0),upi=Math.max(0,parseInt(S.advUpi,10)||0);
   const value=split?cash+upi:Math.max(0,parseInt(S.advVal,10)||0);
   const discounting=settle&&value>0&&value<outstanding;
-  const referenceOk=split?(upi===0||S.advReference.trim().length>=4)
-    :(S.advPayMode==='Cash'||S.advReference.trim().length>=4);
-  const canSave=value>0&&value<=outstanding&&referenceOk&&(!split||(cash>0&&upi>0))
+  const canSave=value>0&&value<=outstanding&&(!split||(cash>0&&upi>0))
     &&(!discounting||(can('manager')&&S.advReason.trim().length>=5));
   const balance=settle?(outstanding-value>0?money(outstanding-value)+' discount against '+money(outstanding)+' outstanding'
     :outstanding-value<0?money(value-outstanding)+' above the outstanding amount':'Settles in full, no discount')
@@ -140,9 +138,7 @@ function advanceDialogHtml(){
     <span class="dlabel">Amount collected now</span><input class="dinput amount" id="adv-val" data-act="adv-val" value="${esc(S.advVal)}" placeholder="0"></label>
     <div class="optrow" style="margin-top:9px">${quick}</div>`}<span class="dlabel" style="margin:14px 0 6px">Payment type</span>
     <div class="optrow">${[...PAY_MODES,'Split'].map(mode=>`<button class="${segCls(S.advPayMode===mode,true)}" data-act="adv-mode" data-v="${mode}"
-    style="height:38px;border-radius:13px">${mode==='Split'?'Cash + UPI':mode}</button>`).join('')}</div>${(split?upi>0:S.advPayMode!=='Cash')?`<label style="display:block;margin-top:12px">
-    <span class="dlabel">${split?'UPI':S.advPayMode} reference · required</span><input class="dinput" id="adv-reference" data-act="adv-reference"
-    value="${esc(S.advReference)}" placeholder="Transaction or receipt reference"></label>`:''}${discounting?`<label style="display:block;margin-top:12px">
+    style="height:38px;border-radius:13px">${mode==='Split'?'Cash + UPI':mode}</button>`).join('')}</div>${discounting?`<label style="display:block;margin-top:12px">
     <span class="dlabel">Discount reason · manager approval required</span><input class="dinput" id="adv-reason" data-act="adv-reason"
     value="${esc(S.advReason)}" placeholder="Why is the remaining ${money(outstanding-value)} being waived?"></label>`:''}
     <div style="font:700 14px var(--sans);margin-top:12px;color:${settle&&outstanding-value===0?'var(--lime)':'var(--warn)'}">${balance}</div>
@@ -210,10 +206,7 @@ function correctionDialogHtml(session, pitch, paid){
   const inMode = Number(byMode[mode] || 0);
   const value = Math.max(0, parseInt(S.advVal, 10) || 0);
   const reasonOk = S.advReason.trim().length >= 5;
-  /* A reversal off a card or a UPI line has to name the transaction it reverses,
-     exactly as taking the money did — the server requires it either way. */
-  const referenceOk = mode === 'Cash' || S.advReference.trim().length >= 4;
-  const canSave = can('manager') && value > 0 && value <= inMode && reasonOk && referenceOk;
+  const canSave = can('manager') && value > 0 && value <= inMode && reasonOk;
   const taken = PAY_MODES.filter(m => Number(byMode[m] || 0) > 0);
   return `<div class="backdrop over"><div class="modal" role="dialog" aria-modal="true" aria-label="Edit payment" tabindex="-1">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -229,10 +222,6 @@ function correctionDialogHtml(session, pitch, paid){
     <input class="dinput amount" id="adv-val" data-act="adv-val" value="${esc(S.advVal)}" placeholder="0"></label>
     <div class="optrow" style="margin-top:9px"><button class="${segCls(value===inMode,true)}" data-act="adv-quick" data-v="${inMode}"
       style="height:38px;border-radius:13px">All ${money(inMode)}</button></div>
-    ${mode==='Cash'?'':`<label style="display:block;margin-top:12px">
-    <span class="dlabel">${mode} reference &middot; required</span>
-    <input class="dinput" id="adv-reference" data-act="adv-reference" value="${esc(S.advReference)}"
-    placeholder="Transaction being reversed"></label>`}
     <label style="display:block;margin-top:12px"><span class="dlabel">What happened &middot; required</span>
     <input class="dinput" id="adv-reason" data-act="adv-reason" value="${esc(S.advReason)}"
     placeholder="e.g. recorded against the wrong booking"></label>

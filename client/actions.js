@@ -1,6 +1,6 @@
 import { END_HOUR, PITCHES, START_HOUR } from './constants.js';
 import { dateForAddress, dayOffsetOf, hourRng12, hours, nowMin, rng12, toMin } from './datetime.js';
-import { blockAtTime, bookingAtTime, bookingById, bookingWindow, clampTimerAt, goToDayOffset, holdAtTime, sessionById, statusAtTime, validContact } from './domain.js';
+import { blockAtTime, bookingAtTime, bookingById, bookingWindow, clampTimerAt, goToDayOffset, holdAtTime, inPersonRef, sessionById, statusAtTime, validContact } from './domain.js';
 import { apiRequest, loadState, mutate, refreshOperationalState } from './api.js';
 import { applyTheme, blankForm, can, S, savePrefs } from './state.js';
 import { dateAddress, groupValid } from './views/availability.js';
@@ -50,7 +50,7 @@ function pickPay(session,status){
   if(!outstanding)return;
   S.advAsk=session.id;S.advMode=status==='Payment done'?'settle':'advance';
   const deposit=Math.min(S.settings.depositAmount,outstanding);
-  S.advVal=status==='Payment done'?String(outstanding):deposit>0?String(deposit):'';S.advReason='';S.advPayMode='Cash';S.advReference='';
+  S.advVal=status==='Payment done'?String(outstanding):deposit>0?String(deposit):'';S.advReason='';S.advPayMode='Cash';
 }
 
 /* A split tender is not a new kind of payment — the ledger is append-only, so
@@ -68,9 +68,10 @@ async function saveAdvance(){
   const split=S.advPayMode==='Split';
   const legs=split
     ? [{mode:'Cash',amount:Math.max(0,parseInt(S.advCash,10)||0),reference:''},
-       {mode:'UPI', amount:Math.max(0,parseInt(S.advUpi,10)||0), reference:S.advReference}]
+       {mode:'UPI', amount:Math.max(0,parseInt(S.advUpi,10)||0), reference:inPersonRef()}]
         .filter(leg=>leg.amount>0)
-    : [{mode:S.advPayMode,amount:Math.max(0,parseInt(S.advVal,10)||0),reference:S.advReference}];
+    : [{mode:S.advPayMode,amount:Math.max(0,parseInt(S.advVal,10)||0),
+        reference:S.advPayMode==='Cash'?'':inPersonRef()}];
   if(!legs.length||legs.some(leg=>leg.amount<=0))return;
   let version=session.version,ok=true;
   for(let index=0;index<legs.length&&ok;index++){
@@ -85,16 +86,17 @@ async function saveAdvance(){
     if(result)version=result.booking?result.booking.version:version; else ok=false;
   }
   if(ok){clearPendingKey('payment',session.id);S.advAsk=null;S.advVal='';S.advReason='';
-    S.advReference='';S.advCash='';S.advUpi='';}
+    S.advCash='';S.advUpi='';}
 }
 
 async function saveRefund(){
   const booking=accountBookingById(S.refundAsk),amount=Math.max(0,parseInt(S.refundVal,10)||0);
   if(!booking||amount<=0||amount>booking.collected||S.refundReason.trim().length<5)return;
   const result=await mutate(`/api/bookings/${encodeURIComponent(booking.id)}/refunds`,{
-    amount,mode:S.refundPayMode,reason:S.refundReason,reference:S.refundReference,
+    amount,mode:S.refundPayMode,reason:S.refundReason,
+    reference:S.refundPayMode==='Cash'?'':inPersonRef(),
     idempotencyKey:pendingKey('refund',booking.id),version:booking.version});
-  if(result){clearPendingKey('refund',booking.id);S.refundAsk=null;S.refundVal='';S.refundReason='';S.refundReference='';}
+  if(result){clearPendingKey('refund',booking.id);S.refundAsk=null;S.refundVal='';S.refundReason='';}
 }
 
 async function addCustom(){
@@ -109,12 +111,14 @@ async function addGroup(){
   const start=toMin(S.gStart),groupId='group-'+Date.now();
   const bookings=S.gDates.map(offset=>{const address=dateAddress(offset);return {pitch:S.gPitch,
     date:dateForAddress(address.week,address.di),start,end:start+S.gDur,team:S.gName.trim(),contact:S.gPhone.trim(),
-    notes:S.gNotes.trim(),pay:S.gPay,groupType:S.gType,groupId,kind:'group',source:'counter'};});
+    notes:S.gNotes.trim(),pay:S.gPay,groupType:S.gType,groupId,groupColor:S.gColor,discountPct:S.gDiscount,
+    kind:'group',source:'counter'};});
   const first=dateAddress(S.gDates.slice().sort((a,b)=>a-b)[0]);
   const result=await mutate('/api/bookings/batch',{bookings});
   if(!result)return;
   S.pitch=S.gPitch;S.weekOffset=first.week;S.dayIndex=first.di;S.availMode='day';
   S.sel={di:first.di,hi:Math.floor(start/60)-START_HOUR};S.groupOpen=false;S.gDates=[];S.gName='';S.gPhone='';S.gNotes='';
+  S.gColor=null;S.gDiscount=0;
 }
 
 let holdInterval=null,holdStartedAt=0;
@@ -231,7 +235,7 @@ async function handleClick(event){
          the sheet could not be saved. */
       const held=['Cash','UPI','Card'].find(mode=>(session.collectedByMode&&session.collectedByMode[mode]||0)>0);
       S.advAsk=session.id;S.advMode='settle';S.advPayMode=held||'Cash';
-      S.advVal='';S.advCash='';S.advUpi='';S.advReason='';S.advReference='';break;}
+      S.advVal='';S.advCash='';S.advUpi='';S.advReason='';break;}
     case 'sessions-mode':S.sessionsMode=value;S.focusSession=null;break;
     case 'toggle-band':if(S.collapsedBands[value])delete S.collapsedBands[value];else S.collapsedBands[value]=true;savePrefs();break;
     case 'day-focus':S.dayIndex=+value;S.availMode='day';S.sel=null;break;
@@ -273,7 +277,8 @@ async function handleClick(event){
     case 'c-dur':S.cDur=+value;break;
     case 'c-pay':S.cPay=value;break;
     case 'add-custom':if(!(S.cName.trim()&&S.cPhone.trim().length>=6))return;await addCustom();break;
-    case 'open-group':S.groupOpen=true;S.customOpen=false;S.sel=null;S.gPitch=S.pitch;S.gDates=[];break;
+    case 'open-group':S.groupOpen=true;S.customOpen=false;S.sel=null;S.gPitch=S.pitch;S.gDates=[];S.gRange=14;
+      S.gColor=null;S.gDiscount=0;break;
     case 'close-group':S.groupOpen=false;break;
     case 'g-type':S.gType=value;break;
     case 'g-pitch':S.gPitch=+value;break;
@@ -281,6 +286,13 @@ async function handleClick(event){
     case 'g-pay':S.gPay=value;break;
     case 'g-date':{const offset=+value;S.gDates=S.gDates.includes(offset)?S.gDates.filter(item=>item!==offset):S.gDates.concat(offset).sort((a,b)=>a-b);break;}
     case 'g-clear-dates':S.gDates=[];break;
+    /* Widening only ever adds dates below the ones already on screen, so the
+       chosen dates and the scroll position both stay where they were. */
+    case 'g-more':S.gRange=Math.min(84,S.gRange+14);break;
+    /* Tapping the colour already on reverts to no tag, so one control both sets
+       and clears it. */
+    case 'g-color':S.gColor=S.gColor===value?null:value;break;
+    case 'g-discount':S.gDiscount=+value;break;
     case 'add-group':await addGroup();break;
     case 'dlg-cancel':S.confirm=null;S.form=blankForm();break;
     case 'dlg-confirm':{const mode=S.confirm;if(mode!=='confirm-hold'&&!confirmValid())return;
@@ -321,9 +333,9 @@ async function handleClick(event){
       {status:'done',version:current.version});if(result)S.doneAsk=null;break;}
     case 'done-collect':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
       {status:'done',version:current.version});if(result){S.doneAsk=null;pickPay(sessionById(current.id),'Payment done');}break;}
-    case 'adv-cancel':if(S.advAsk)clearPendingKey('payment',S.advAsk);S.advAsk=null;S.advVal='';S.advReason='';S.advReference='';S.advCash='';S.advUpi='';break;
+    case 'adv-cancel':if(S.advAsk)clearPendingKey('payment',S.advAsk);S.advAsk=null;S.advVal='';S.advReason='';S.advCash='';S.advUpi='';break;
     case 'adv-quick':S.advVal=value;break;
-    case 'adv-mode':{const wasSplit=S.advPayMode==='Split';S.advPayMode=value;S.advReference='';
+    case 'adv-mode':{const wasSplit=S.advPayMode==='Split';S.advPayMode=value;
       if(value==='Split'&&!wasSplit){S.advCash=S.advVal||'';S.advUpi='';}
       if(value!=='Split'&&wasSplit){S.advVal=String((parseInt(S.advCash,10)||0)+(parseInt(S.advUpi,10)||0)||'');}
       break;}
@@ -335,10 +347,10 @@ async function handleClick(event){
       if(!session||amount<=0||!can('manager')||S.advReason.trim().length<5)break;
       const result=await mutate(`/api/bookings/${encodeURIComponent(session.id)}/refunds`,{
         amount,mode:S.advPayMode,reason:'Correction: '+S.advReason.trim(),
-        reference:S.advReference,idempotencyKey:pendingKey('refund',session.id),
+        reference:S.advPayMode==='Cash'?'':inPersonRef(),idempotencyKey:pendingKey('refund',session.id),
         version:session.version});
       if(result){clearPendingKey('refund',session.id);S.advAsk=null;S.advVal='';
-        S.advReason='';S.advReference='';}
+        S.advReason='';}
       break;}
     case 'account-clear-focus':S.accountFocus=null;break;
     case 'account-history':S.accountHistory=S.accountHistory===id?null:id;break;
@@ -347,10 +359,10 @@ async function handleClick(event){
     case 'account-collect':{const booking=accountBookingById(id);if(booking)pickPay(booking,'Payment done');break;}
     case 'account-refund':{const booking=accountBookingById(id);if(booking&&can('manager')&&booking.collected>0){const modes=['Cash','UPI','Card'];
       S.refundPayMode=modes.find(mode=>(booking.collectedByMode?.[mode]||0)>0)||'Cash';S.refundAsk=booking.id;
-      S.refundVal=String(booking.collectedByMode?.[S.refundPayMode]||booking.collected);S.refundReason='';S.refundReference='';}break;}
-    case 'refund-cancel':if(S.refundAsk)clearPendingKey('refund',S.refundAsk);S.refundAsk=null;S.refundVal='';S.refundReason='';S.refundReference='';break;
+      S.refundVal=String(booking.collectedByMode?.[S.refundPayMode]||booking.collected);S.refundReason='';}break;}
+    case 'refund-cancel':if(S.refundAsk)clearPendingKey('refund',S.refundAsk);S.refundAsk=null;S.refundVal='';S.refundReason='';break;
     case 'refund-quick':S.refundVal=value;break;
-    case 'refund-mode':{S.refundPayMode=value;const booking=accountBookingById(S.refundAsk);S.refundVal=String(booking?.collectedByMode?.[value]||'');S.refundReference='';break;}
+    case 'refund-mode':{S.refundPayMode=value;const booking=accountBookingById(S.refundAsk);S.refundVal=String(booking?.collectedByMode?.[value]||'');break;}
     case 'refund-save':await saveRefund();break;
     case 'action-cancel':S.actionAsk=null;S.actionReason='';break;
     case 'action-confirm':await confirmAuditedAction();break;
@@ -395,10 +407,8 @@ async function handleInput(event){
     case 'adv-upi':S.advUpi=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advUpi)target.value=S.advUpi;render();break;
     case 'reason':S.blockReason=target.value;refreshGate();break;
     case 'adv-reason':S.advReason=target.value;refreshGate();break;
-    case 'adv-reference':S.advReference=target.value;refreshGate();break;
     case 'refund-val':S.refundVal=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.refundVal)target.value=S.refundVal;render();break;
     case 'refund-reason':S.refundReason=target.value;refreshGate();break;
-    case 'refund-reference':S.refundReference=target.value;refreshGate();break;
     case 'account-search':S.accountSearch=target.value;render();break;
     case 'account-from':S.accountFrom=target.value;render();break;
     case 'account-to':S.accountTo=target.value;render();break;
@@ -430,8 +440,7 @@ function refreshGate(){
   if(correct&&S.advAsk){const session=sessionById(S.advAsk);
     const value=Math.max(0,parseInt(S.advVal,10)||0);
     const inMode=session?Number((session.collectedByMode||{})[S.advPayMode]||0):0;
-    const referenceOk=S.advPayMode==='Cash'||S.advReference.trim().length>=4;
-    const valid=can('manager')&&value>0&&value<=inMode&&S.advReason.trim().length>=5&&referenceOk;
+    const valid=can('manager')&&value>0&&value<=inMode&&S.advReason.trim().length>=5;
     correct.disabled=!valid;correct.style.cursor=valid?'pointer':'not-allowed';
     correct.style.opacity=valid?1:.45;}
   const advance=document.querySelector('[data-act="adv-save"]');if(advance&&S.advAsk){const session=sessionById(S.advAsk);
@@ -442,13 +451,11 @@ function refreshGate(){
     const value=split?cash+upi:Math.max(0,parseInt(S.advVal,10)||0);
     const outstanding=session?Math.max(0,session.amount-(session.discount||0)-(session.collected||0)):0;
     const discounting=S.advMode==='settle'&&value>0&&value<outstanding;
-    const referenceOk=split?(upi===0||S.advReference.trim().length>=4)
-      :(S.advPayMode==='Cash'||S.advReference.trim().length>=4);
-    advance.disabled=!(value>0&&value<=outstanding&&referenceOk&&(!split||(cash>0&&upi>0))
+    advance.disabled=!(value>0&&value<=outstanding&&(!split||(cash>0&&upi>0))
       &&(!discounting||(can('manager')&&S.advReason.trim().length>=5)));}
   const refund=document.querySelector('[data-act="refund-save"]');if(refund&&S.refundAsk){const booking=accountBookingById(S.refundAsk),value=Math.max(0,parseInt(S.refundVal,10)||0);
-    const available=booking?.collectedByMode?.[S.refundPayMode]||0,referenceOk=S.refundPayMode==='Cash'||S.refundReference.trim().length>=4;
-    refund.disabled=!(booking&&value>0&&value<=available&&referenceOk&&S.refundReason.trim().length>=5);}
+    const available=booking?.collectedByMode?.[S.refundPayMode]||0;
+    refund.disabled=!(booking&&value>0&&value<=available&&S.refundReason.trim().length>=5);}
   const createUser=document.querySelector('[data-act="create-user"]');if(createUser)createUser.disabled=!(S.newName.trim()&&/^\S+@\S+\.\S+$/.test(S.newEmail.trim())&&S.newPassword.length>=12);
   const deposit=document.querySelector('[data-act="save-deposit"]');if(deposit){const amount=Number(S.depositDraft);
     deposit.disabled=!(S.depositDirty&&S.depositDraft!==''&&Number.isInteger(amount)&&amount>=0&&amount<=50000);}
