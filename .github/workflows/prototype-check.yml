@@ -1,0 +1,25 @@
+name: Prototype checks
+
+on:
+  pull_request:
+  push:
+    branches: [codex/board-ux-and-session-rules, codex/free-cloudflare-supabase-prototype]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run check:portable
+      - run: npm run build:pages
+      - run: npm run build:edge

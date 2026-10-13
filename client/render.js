@@ -156,20 +156,22 @@ export function syncLiveCards(){
   document.querySelectorAll('.schedule-bub.is-running').forEach(card => {
     const from = +card.dataset.from, to = +card.dataset.to;
     if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
+    const frozen=card.querySelector('[data-clock-at]')?.dataset.clockAt;
+    const clockNow=frozen?Number(frozen):now;
     const fill = card.querySelector('.tm-ring-fill');
     if (fill) fill.style.strokeDasharray =
-      `${Math.min(100, Math.max(0, ((now - from) / (to - from)) * 100)).toFixed(2)} 100`;
+      `${Math.min(100, Math.max(0, ((clockNow - from) / (to - from)) * 100)).toFixed(2)} 100`;
     /* The card is not repainted every second, so the crossing into overtime has
        to be applied here or the colour would wait for the next full render —
        which could be minutes, and the whole point is that it is late now. */
-    const over = now > to;
+    const over = clockNow > to;
     card.classList.toggle('is-over', over);
     const count = card.querySelector('[data-count]');
     /* countTxt returns markup — the seconds sit in their own element so they can
        ride a size down. Digits and tags only; no user data reaches this. */
     if (count){
       count.classList.toggle('is-over', over);
-      count.innerHTML = countTxt(to);
+      count.innerHTML = countTxt(to,clockNow);
     }
   });
 }
@@ -189,8 +191,18 @@ export function syncNowLine(){
 }
 
 export function startRendering(){
+  let refreshing=false,pending=false;
+  const refresh=async()=>{
+    if(!S.user||S.busy||refreshing||document.hidden){pending=true;return;}
+    refreshing=true;pending=false;
+    try{await refreshOperationalState();render();}finally{refreshing=false;}
+  };
+  const events=new EventSource('/api/public/events');
+  events.addEventListener('ledger',refresh);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+  setInterval(()=>{if(pending)refresh();},1000);
   const bootDay=isoDate(new Date());
   addEventListener('scroll',()=>{if(!stuckRaf)stuckRaf=requestAnimationFrame(()=>syncStuck());},{passive:true});
   setInterval(()=>{if(isoDate(new Date())!==bootDay){location.reload();return;}if(!S.user)return;if(LIVE_VIEWS.has(S.view))render();else{renderTopbar();if(S.view==='availability'){syncNowLine();syncLiveCards();}}},1000);
-  setInterval(async()=>{if(!S.user||S.busy)return;await refreshOperationalState();render();},15000);
+  setInterval(refresh,15000);
 }

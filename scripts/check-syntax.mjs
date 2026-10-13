@@ -9,8 +9,10 @@ import { execFileSync } from 'node:child_process';
 import { globSync } from 'node:fs';
 
 const files = [
-  'app.js', 'server.mjs', 'server/store.mjs',
+  'app.js', 'mobile.js', 'server.mjs', ...globSync('server/*.mjs'), ...globSync('customer/*.js'),
   ...globSync('client/*.js'), ...globSync('client/views/*.js'), ...globSync('scripts/*.mjs'),
+  ...globSync('supabase/functions/**/*.mjs'),
+  ...globSync('cloudflare/*.mjs'), ...globSync('functions/**/*.js'),
 ].sort();
 
 let bad = 0;

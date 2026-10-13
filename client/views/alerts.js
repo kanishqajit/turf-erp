@@ -25,9 +25,10 @@ export function buildAlerts(){
           : 'Booked '+rng12(session.start,session.end)+'. Start the timer when they take the pitch.',
         action:elapsed?'Resolve':'Start timer',act:elapsed?'alert-resolve':'alert-timer',id:session.id});
     }
-    if (session.status === 'running' && now > session.end){
-      game.push({kind:'game',at:session.end,urgent:true,tag:'Overtime',title:session.team+' · '+pitch.name,
-        body:'Running '+durTxt(now-session.end)+' past the booked end time.',action:'End session',act:'alert-done',id:session.id});
+    const liveEnd = (session.startedAt == null ? session.start : session.startedAt) + (session.end - session.start)+(session.pausedMilliseconds||0)/60000;
+    if (session.status === 'running' && !session.pausedAt && now > liveEnd){
+      game.push({kind:'game',at:liveEnd,urgent:true,tag:'Overtime',title:session.team+' · '+pitch.name,
+        body:'Running '+durTxt(now-liveEnd)+' past the timer end time.',action:'End session',act:'alert-done',id:session.id});
     }
     if (session.pay !== 'Payment done' && session.status !== 'noshow'){
       cash.push({kind:'cash',at:session.end,urgent:session.status==='done',

@@ -1,5 +1,5 @@
 import { DAY_END, DAY_START, MATCH_STATES, PAY_STATES, PITCHES, SPAN, payShort } from '../constants.js';
-import { durTxt, nowMin, pos, rng12, t12 } from '../datetime.js';
+import { durTxt, nowMin, minuteAt, pos, rng12, t12 } from '../datetime.js';
 import { collectTotal, esc, money, segCls, sessionsToday, tintFor, tintVars } from '../domain.js';
 import { S } from '../state.js';
 
@@ -15,13 +15,16 @@ export function buildSessions(){
     .map(s => {
       const pitch = PITCHES[s.pitch];
       const running = s.status === 'running', upcoming = s.status === 'upcoming', done = s.status === 'done';
-      const left = s.end - now, over = running && left < 0;
+      const liveStart = (s.startedAt == null ? s.start : s.startedAt)+(s.pausedMilliseconds||0)/60000;
+      const liveEnd = liveStart + (s.end - s.start);
+      const clockNow=s.pausedAt?minuteAt(s.pausedAt):now;
+      const left = (running ? liveEnd : s.end) - (running?clockNow:now), over = running && left < 0;
       const late = upcoming && now > s.start, elapsedSlot = upcoming && now >= s.end;
-      const elapsed = running ? now - (s.startedAt || s.start) : 0;
-      const pct = running ? Math.max(0, Math.min(100, ((now - s.start) / (s.end - s.start)) * 100)) : done ? 100 : 0;
+      const elapsed = running ? clockNow - liveStart : 0;
+      const pct = running ? Math.max(0, Math.min(100, ((clockNow - liveStart) / (s.end - s.start)) * 100)) : done ? 100 : 0;
       const amount = s.amount, unpaid = s.pay !== 'Payment done', duePay = done && unpaid;
       const actions = (running
-        ? [{label:'End match',primary:true,act:'ask-done'},{label:'+30 min',act:'plus30'}]
+        ? [{label:s.pausedAt?'Resume':'Pause',act:s.pausedAt?'resume-clock':'pause-clock'},{label:'End match',primary:true,act:'ask-done'},{label:'+30 min',act:'plus30'}]
         : upcoming ? (elapsedSlot?[{label:'Resolve no-show',primary:true,act:'noshow'}]
           :[{label:'Start match',primary:true,act:'mark-started'},{label:'No-show',act:'noshow'}])
         : s.status === 'noshow' ? [{label:'Undo no-show',primary:true,act:'undo-noshow'}] : [])
@@ -33,7 +36,7 @@ export function buildSessions(){
         running, upcoming, done, over, late, elapsedSlot, unpaid, duePay, pct, amount,
         awaitingPay:duePay, focused:S.focusSession === s.id,
         rowCls:over ? 'over' : running ? 'play' : duePay ? 'duepay' : late ? 'over' : upcoming ? 'upcoming' : s.status === 'noshow' ? 'noshow' : 'done',
-        statusLabel:over ? 'Overtime' : running ? 'In play' : elapsedSlot ? 'Unresolved' : late ? 'Late start' : upcoming ? 'Up next'
+        statusLabel:s.pausedAt?'Paused':over ? 'Overtime' : running ? 'In play' : elapsedSlot ? 'Unresolved' : late ? 'Late start' : upcoming ? 'Up next'
           : done ? (unpaid ? 'Payment due' : 'Completed') : 'No-show',
         statusCls:over||late ? 'over' : running ? 'play' : duePay ? 'duepay' : '',
         sourceLabel:s.source === 'app' ? 'App' : 'Counter', sourceCls:s.source === 'app' ? 'via-app' : '',
@@ -90,7 +93,9 @@ function timelineHtml(pitchIndex){
   const blocks = sessionsToday().filter(session => session.pitch === pitchIndex).map(session => {
     const running = session.status === 'running';
     const duePay = session.status === 'done' && session.pay !== 'Payment done';
-    const over = running && session.end < now;
+    const liveEnd = (session.startedAt == null ? session.start : session.startedAt) + (session.end - session.start)+(session.pausedMilliseconds||0)/60000;
+    const clockNow=session.pausedAt?minuteAt(session.pausedAt):now;
+    const over = running && liveEnd < clockNow;
     /* Fills come from the strip's own tokens rather than from the card
        surfaces. A surface is chosen to sit on the page; these have to be
        legible against the track they sit in, and in the dark theme --paper over

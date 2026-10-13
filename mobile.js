@@ -69,7 +69,8 @@ function dayName(iso){
     : DOW[(d.getDay() + 6) % 7] + ' ' + d.getDate() + ' ' + MON[d.getMonth()];
 }
 const todayIso = () => dateFor(0);
-const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60; };
+const minuteAt = timestamp => {const d=new Date(timestamp);return d.getHours()*60+d.getMinutes()+d.getSeconds()/60+d.getMilliseconds()/60000;};
+const nowMin = () => minuteAt(Date.now());
 
 /* ─── venue constants ─────────────────────────────────── */
 /* Mirrors client/constants.js. OVERVIEW.md flags that pitches and rates exist
@@ -84,7 +85,8 @@ const PITCHES = [
 /* Midnight, mirroring CLOSE_MIN in server/store.mjs and END_HOUR in
    client/constants.js. All three are the same fact in three files. */
 const START_HOUR = 6, END_HOUR = 24;
-const PAY_FORM = ['Payment at venue','Advance paid','Payment done'];
+/* A payment status is derived from ledger entries, never a booking-form flag. */
+const PAY_FORM = ['Payment at venue'];
 const TENDERS = ['Cash','UPI','Card','Split'];
 const ROLES = { operator:1, manager:2, owner:3 };
 
@@ -100,12 +102,10 @@ const S = {
   screen:'home', sheet:null, dayIndex:0,
   boardMode:'all', pitch:0,   // the days grid: all pitches on a day, or one across the week
   collapsedBands:{},
-  /* Check-in is the one piece of session state the server has no column for
-     (OVERVIEW.md); starting the timer is the real, audited transition. */
+  /* Check-in and clock state are read from the shared ledger. */
   checkedIn:{},
   tender:'UPI', splitCash:'', timerAt:null,
-  /* Clocks stopped mid-game. The server has no paused status (OVERVIEW.md), so
-     a pause is held here and settled on the server when play resumes. */
+  /* Empty compatibility state for older phone preferences. */
   paused:{},
   form:blankForm(), blockReason:'', cancelReason:'', releaseReason:'',
   sellPitch:0, sellStart:'20:00', sellDur:60,
@@ -238,9 +238,7 @@ const collectTotal = () => collectable().reduce((n, b) => n + outstanding(b), 0)
 /* What the till should hold, by tender, straight off the server's own
    per-mode sums — the drawer is counted against these three figures. */
 function takings(){
-  const by = { Cash:0, UPI:0, Card:0 };
-  sess().forEach(b => Object.keys(by).forEach(m => { by[m] += (b.collectedByMode || {})[m] || 0; }));
-  return { by, total:by.Cash + by.UPI + by.Card };
+  return S.till || {by:{Cash:0,UPI:0,Card:0},total:0};
 }
 
 /* ─── what is on a cell ───────────────────────────────── */
@@ -288,7 +286,7 @@ function buildAlerts(){
           : 'Booked ' + rng12(b.start, b.end) + '. Start the timer when they take the pitch.',
         action:'Start timer', act:'start', id:b.id });
     }
-    const w = b.status === 'running' ? liveWindow(b) : null;
+    const w = b.status === 'running' && !b.pausedAt ? liveWindow(b) : null;
     if (w && now > w.until){
       game.push({ at:w.until, rel: mins(now - w.until) + ' over', tag:'Overtime', warn:true,
         title: b.team + ' · ' + p.name,
@@ -321,6 +319,7 @@ async function loadState(){
   S.holds = state.holds || [];
   S.blocks = state.blocks || [];
   S.settings = state.settings || { depositAmount:500 };
+  S.till = state.till;
   try {
     /* The board only needs the days it draws; the accounts worklist needs
        enough history to be worth opening, without pulling a year onto a phone. */
@@ -429,9 +428,8 @@ const START_WINDOW = 20;   // minutes before kick-off that check-in opens
 function liveMode(b){
   if (GONE.has(b.status)) return null;
   if (b.status === 'done') return outstanding(b) > 0 ? 'owed' : 'settled';
-  if (b.status === 'running') return 'running';
-  if (S.paused[b.id]) return 'paused';
-  if (S.checkedIn[b.id]) return 'ready';
+  if (b.status === 'running') return b.pausedAt ? 'paused' : 'running';
+  if (b.checkedInAt) return 'ready';
   return b.start - nowMin() <= START_WINDOW ? 'arriving' : null;
 }
 
@@ -444,34 +442,14 @@ function liveMode(b){
    to agree or the counter and the pitch call time a quarter of an hour apart. */
 function liveWindow(b){
   const total = Math.max(1, b.end - b.start);
-  const held = S.paused[b.id];
-  /* Held: the clock reads whatever it read at the moment it was stopped. */
-  const from = held ? held.from : b.startedAt == null ? b.start : b.startedAt;
-  return { from, until:from + total, total, at:held ? held.at : null };
+  const from = (b.startedAt == null ? b.start : b.startedAt)+(b.pausedMilliseconds||0)/60000;
+  return { from, until:from + total, total,
+    at:b.pausedAt ? minuteAt(b.pausedAt) : null };
 }
-
-/* A pause is a local hold plus a correction posted when play resumes: the
-   restart minute is pushed forward by exactly the time the clock stood still,
-   so the session keeps the minutes it paid for and the counter's screen agrees
-   again the moment it is running. Kept in localStorage because a phone that
-   locks mid-rain-delay must not come back with the clock running. */
-const PAUSE_KEY = 'turf-erp:paused';
-function loadPauses(){
-  try { S.paused = JSON.parse(localStorage.getItem(PAUSE_KEY) || '{}') || {}; } catch (_) { S.paused = {}; }
-}
-function savePauses(){
-  try { localStorage.setItem(PAUSE_KEY, JSON.stringify(S.paused)); } catch (_) {}
-}
-/* A session someone restarted from the counter is not paused any more. */
-function sweepPauses(){
-  if (S.busy) return;
-  let moved = false;
-  Object.keys(S.paused).forEach(id => {
-    const b = sessById(id);
-    if (!b || b.status !== 'upcoming'){ delete S.paused[id]; moved = true; }
-  });
-  if (moved) savePauses();
-}
+// Legacy phone-local pauses are no longer read; the ledger owns the clock.
+function loadPauses(){S.paused={};}
+function savePauses(){}
+function sweepPauses(){}
 
 /* What the server will accept as a start minute, so a bound the operator
    cannot cross shows as a dead button rather than an error after the fact. */
@@ -510,7 +488,7 @@ function rowOpen(hi){
 /* "45:00", seconds at 44%. Past an hour it grows an hours field rather than
    counting to "72:43", which nobody reads as an hour and a bit. */
 function countTxt(end, at){
-  const raw = Math.floor((end - (at == null ? nowMin() : at)) * 60), over = raw < 0, v = Math.abs(raw);
+  const raw = Math.round((end - (at == null ? nowMin() : at)) * 60), over = raw < 0, v = Math.abs(raw);
   const h = Math.floor(v / 3600), m = Math.floor(v % 3600 / 60);
   return (over ? '+' : '') + (h ? h + ':' + pad2(m) : m) + '<i>:' + pad2(v % 60) + '</i>';
 }
@@ -910,12 +888,12 @@ function screenToday(){
   const chip = (k, lbl) => `<button class="m-filter${S.todayFilter === k ? ' is-on' : ''}"
     data-act="today-filter" data-v="${k}">${lbl}</button>`;
 
-  const stateOf = b => b.status === 'running' ? ['In play', 'is-play']
+  const stateOf = b => b.status === 'running' ? (b.pausedAt?['Paused','is-dim']:['In play','is-play'])
     : b.status === 'done' ? ['Finished', '']
     : b.status === 'noshow' ? ['No-show', 'is-dim']
     : b.status === 'cancelled' ? ['Cancelled', 'is-dim']
-    : S.paused[b.id] ? ['Paused', 'is-dim']
-    : S.checkedIn[b.id] ? ['Checked in', 'is-good']
+    : b.pausedAt ? ['Paused', 'is-dim']
+    : b.checkedInAt ? ['Checked in', 'is-good']
     : b.start - now <= START_WINDOW ? ['At the gate', 'is-good']
     : ['Not started', ''];
 
@@ -1201,7 +1179,7 @@ async function collectNow(id){
       { amount:out, mode:S.tender, reference:S.tender === 'Cash' ? '' : ref, idempotencyKey:key() });
     if (!done) return;
   }
-  if (!S.apiError){ S.sheet = null; S.splitCash = ''; }
+  if (!S.apiError){ S.sheet = null; S.splitCash = ''; render(); }
 }
 
 function sheetHtml(){
@@ -1351,7 +1329,7 @@ function sheetHtml(){
       <div class="m-stack">
         <button class="m-btn is-wide is-tall ${ready ? 'is-lime' : ''}" data-act="book-slot"
           data-pay="paid" ${ready ? '' : 'disabled'}>
-          ${ready ? 'Book and collect ' + money(priceFor(sh.pi, h * 60, (h + 1) * 60))
+          ${ready ? 'Book, then collect ' + money(priceFor(sh.pi, h * 60, (h + 1) * 60))
             : 'Name and contact required'}</button>
         <button class="m-btn is-dark is-wide" data-act="book-slot" data-pay="venue"
           ${ready ? '' : 'disabled'}>Book, pay at venue</button>
@@ -1368,14 +1346,14 @@ function sheetHtml(){
   if (sh.kind === 'endask'){
     const b = sessById(sh.id);
     if (!b) return '';
-    const p = PITCHES[b.pitch], w = liveWindow(b), held = !!S.paused[b.id];
+    const p = PITCHES[b.pitch], w = liveWindow(b), held = !!b.pausedAt;
     const mark = held ? w.at : nowMin();
     const played = Math.max(0, mark - w.from), out = outstanding(b);
     const over = mark > w.until;
     /* A paused match already reads as "not started" on the server, so undoing
        it costs nothing and needs nobody's permission. Undoing a running one
        runs the record backwards, which the server treats as manager work. */
-    const canUndo = held || can('manager');
+    const canUndo = can('manager');
     return sheetShell(held ? 'Paused session' : 'End session', 'is-warn2',
       mins(played) + ' played',
       b.team + ' · ' + p.name + ' · ' + rng12(b.start, b.end),
@@ -1527,6 +1505,8 @@ function sheetHtml(){
         <div class="m-stack">
           <button class="m-btn is-wide is-tall ${ready ? 'is-lime' : ''}" data-act="book-slot"
             ${ready ? '' : 'disabled'}>${ready ? 'Book this slot' : 'Name and contact required'}</button>
+          <button class="m-btn is-dark is-wide" data-act="book-slot" data-pay="paid"
+            ${ready ? '' : 'disabled'}>Book, then collect ${amount}</button>
           <button class="m-btn is-dark is-wide" data-act="hold-slot" ${ready ? '' : 'disabled'}>
             Hold for 20 minutes</button>
         </div>
@@ -1807,8 +1787,8 @@ function go(screen){
 }
 
 /* ─── events ──────────────────────────────────────────── */
-/* Every write is a POST to the same audited endpoint the counter uses. The
-   local-only exception is check-in, which the server has no column for. */
+/* Every write is a POST to the same audited endpoint the counter uses,
+   including shared check-in and pause/resume. */
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
   if (!t || t.disabled) return;
@@ -1866,8 +1846,8 @@ document.addEventListener('click', e => {
     case 'ask-release': S.sheet = { kind:'release', id }; S.releaseReason = ''; break;
 
     /* a match, from arrival to settled */
-    case 'check-in': S.checkedIn[id] = true; break;
-    case 'undo-check-in': delete S.checkedIn[id]; break;
+    case 'check-in': mutate('/api/bookings/'+id+'/check-in',{checked:true,version:b.version});return;
+    case 'undo-check-in': mutate('/api/bookings/'+id+'/check-in',{checked:false,version:b.version});return;
     /* Which minute the clock runs from is the operator's call, not a default. */
     case 'start': S.sheet = { kind:'timer', id }; S.timerAt = null; break;
     case 'timer-mode':
@@ -1892,34 +1872,10 @@ document.addEventListener('click', e => {
         { status:'running', atMinute, version:s.version });
       return;
     }
-    /* Pausing does not end anything: the clock stops where it is and the
-       remaining minutes are kept. The server has no paused status, so the
-       booking goes back to upcoming there — which is true, the clock is not
-       running — and the minute it restarts from is corrected on resume.
-       Stopping a running match is not a normal transition, so the server wants
-       a manager for it; the button is hidden from operators rather than
-       offered and refused. */
-    case 'pause-timer': {
-      const w = liveWindow(b);
-      S.paused[id] = { from:w.from, at:Math.floor(nowMin()) };
-      savePauses();
-      mutate('/api/bookings/' + id + '/status',
-        { status:'upcoming', reason:'Clock paused from the phone', version:b.version })
-        .then(result => { if (!result){ delete S.paused[id]; savePauses(); render(); } });
-      return;
-    }
-    /* Restart from the minute the clock stopped on, pushed forward by however
-       long it stood still — so the session ends later by exactly the length of
-       the interruption, and both screens agree again. */
-    case 'resume-timer': {
-      const held = S.paused[id];
-      if (!held) return;
-      const atMinute = Math.round(held.from + (nowMin() - held.at));
-      delete S.paused[id]; savePauses();
-      mutate('/api/bookings/' + id + '/status',
-        { status:'running', atMinute, version:b.version });
-      return;
-    }
+    case 'pause-timer':
+      mutate('/api/bookings/'+id+'/clock',{action:'pause',version:b.version});return;
+    case 'resume-timer':
+      mutate('/api/bookings/'+id+'/clock',{action:'resume',version:b.version});return;
     case 'ask-end': S.sheet = { kind:'endask', id }; break;
     case 'end-game':
     case 'complete':
@@ -1936,11 +1892,11 @@ document.addEventListener('click', e => {
        holding; a running one has to be walked back, and the audit row says
        why in plain words rather than making somebody type it on a pitch. */
     case 'undo-start': {
-      const held = !!S.paused[id];
+      const held = !!b.pausedAt;
       delete S.paused[id]; savePauses();
       delete S.checkedIn[id];
       S.sheet = null;
-      if (held){ render(); return; }
+
       mutate('/api/bookings/' + id + '/status',
         { status:'upcoming', reason:'Started in error, undone from the phone', version:b.version });
       return;
@@ -2023,10 +1979,16 @@ document.addEventListener('click', e => {
       /* Read before the form is cleared, or the booking goes up nameless. */
       const body = { date:confirm ? todayIso() : sh.date, pitch:sh.pi,
         start:h * 60, end:(h + 1) * 60,
-        team:S.form.team.trim(), contact:S.form.contact.trim(),
-        pay:confirm ? (t.dataset.pay === 'paid' ? 'Payment done' : 'Payment at venue') : S.form.pay };
+        team:S.form.team.trim(), contact:S.form.contact.trim() };
+      const collectAfterBooking = t.dataset.pay === 'paid';
       S.sheet = null; S.form = blankForm();
-      mutate('/api/bookings', body);
+      mutate('/api/bookings', body).then(result => {
+        if (collectAfterBooking && result?.bookings?.[0]){
+          S.sheet = { kind:'collect', id:result.bookings[0].id };
+          S.splitCash = '';
+          render();
+        }
+      });
       return;
     }
     case 'hold-slot': {
@@ -2136,6 +2098,16 @@ addEventListener('pointercancel', () => setTimeout(release, 0), true);
 render();
 boot();
 
+let liveRefreshBusy=false,liveRefreshPending=false;
+async function refreshLedger(){
+  if(!S.user||S.busy||S.sheet||typingNow()||holding||document.hidden||liveRefreshBusy){liveRefreshPending=true;return;}
+  liveRefreshBusy=true;liveRefreshPending=false;
+  try{await loadState();render();}catch(error){S.apiError=error.message;render();}finally{liveRefreshBusy=false;}
+}
+const ledgerEvents=new EventSource('/api/public/events');
+ledgerEvents.addEventListener('ledger',refreshLedger);
+setInterval(()=>{if(liveRefreshPending)refreshLedger();},1000);
+
 setInterval(() => {
   if (!S.user || !LIVE_SCREENS.has(S.screen)) return;
   if (holding){ missedTick = true; return; }
@@ -2152,7 +2124,7 @@ setInterval(() => {
    whenever it comes back to the foreground. */
 setInterval(() => {
   if (!S.user || S.busy || S.sheet || typingNow()) return;
-  loadState().then(render).catch(() => {});
+  refreshLedger();
 }, 20000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && S.user && !S.busy) loadState().then(render).catch(() => {});

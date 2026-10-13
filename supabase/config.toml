@@ -1,0 +1,9 @@
+project_id = "futly"
+
+[functions.futly-ledger]
+# Custom server authentication is verified inside the function and the database.
+verify_jwt = false
+
+[functions.futly-api]
+# The private ledger verifies the frontend token before any application route.
+verify_jwt = false

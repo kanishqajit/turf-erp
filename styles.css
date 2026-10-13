@@ -23,6 +23,7 @@
   --paper:#fff;
   --soft:#F4F5F0;
   --soft2:#F7F8F4;
+  --schedule-canvas:#F3F1EA;
   --edge:#EAECE4;
   --edge2:#E4E6DE;
   --edge3:#D5D9CE;
@@ -210,7 +211,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .schedule-bub:focus-visible{z-index:3}
 .bub.schedule-bub>.bub-time{transform:none}
 .schedule-bub .bub-time{font:800 22px/1 var(--sans);max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.is-run .ev-head .bub-time{font-size:21px}
+.is-run{--run-time-min:13px;--run-time-fluid:10cqw;--run-time-max:21px}
+.is-run.is-tall{--run-time-min:14.86px;--run-time-fluid:11.43cqw;--run-time-max:24px}
+.is-run.is-long{--run-time-min:16.72px;--run-time-fluid:12.86cqw;--run-time-max:27px}
+.is-run .ev-head .bub-time{
+  font-size:clamp(var(--run-time-min),var(--run-time-fluid),var(--run-time-max))}
 .is-run .ev-head .bub-time i{font-size:.55em;opacity:.6}
 /* ── how a taller card spends its extra height ──
    An hour card is exactly full: tag, times, band, no slack. Longer bookings
@@ -220,34 +225,30 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
    band holds the bottom, and the times sit centred between them at every
    length. Longer bookings also carry a little more type, so the card reads as
    deliberately larger rather than as an hour card that got stretched. */
-.is-run .ev-head{margin-block:auto}
-/* ── one type size, whatever the duration ──
-   Type that grew with height made a two-hour card read as a stretched hour
-   card: the same composition, everything slightly too big, the rail squeezed
-   between two oversized times. So the type is locked to the hour card's own
-   sizes and the extra height buys nothing but air, split above and below the
-   times. A longer booking reads as a longer card because it IS longer, not
-   because its numbers got bigger. */
+.is-run .ev-head{margin-block:auto;width:max-content;max-width:100%;align-self:center;justify-content:center}
+/* Taller cards retain slightly roomier insets, while their type follows the
+   shared duration scale above rather than growing independently from height. */
 .schedule-bub.is-tall{padding:11px 14px}
 /* The band grows with the card too, so it stays a section of it rather than
    thinning into a stripe as the card gets taller. Specificity matches the
    `.is-run .ev-foot` rule above and has to beat it, hence the doubled class. */
 .schedule-bub.is-tall .ev-foot{margin:0 -14px -11px;padding:8px 14px 9px}
 
-/* The duration-scale reference grows in two visible steps on the board: 90
-   minutes establishes the larger composition, and 120 minutes or more gets a
-   second step. Width still caps the scale, while the side padding and rail gaps
-   yield first, so the larger type never collides in a compact pitch column. */
-/* ── a column too narrow for the whole composition ──
-   The duration chip is the first thing to go: the two end times state the run
-   and the chip only restates its length, so dropping it buys ~45px without
-   losing anything the card has not already said. Keyed to the cell, which is
-   the container the column width actually lands on. */
+/* ── proportional type below the full-width composition ──
+   The 21 / 24 / 27px desktop hierarchy for 60 / 90 / 120 minute runs is a
+   single 1 / 1.14 / 1.29 scale. Because every value above is driven by the
+   same container width, that relationship survives intact as the pitch column
+   contracts instead of every duration collapsing to one fallback size. */
+@container (max-width:239px){
+  .schedule-bub.is-run .ev-rail{display:none}
+  .schedule-bub.is-run .ev-head{justify-content:center;gap:12px}
+}
+/* Remaining compact bubble variants shed optional detail in the same order.
+   These queries are keyed to the cell, which is where column width lands. */
 @container (max-width:186px){
   .schedule-bub .ev-chip{display:none}
   .schedule-bub .ev-rail i{display:block}
   .schedule-bub .ev-head{gap:6px}
-  .schedule-bub.is-run .ev-head .bub-time{font-size:max(12.5px,11cqw)}
   .schedule-bub .ev-foot{gap:5px}
 }
 @container (max-width:150px){
@@ -264,22 +265,17 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   .daycard:not(.is-dense) .schedule-bub.is-long.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer){
     --s:min(var(--h),46cqw)}
   .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer)>small{
-    margin:0;font:700 max(11.5px,calc(var(--s) * .125))/1 var(--disp);
-    letter-spacing:var(--tr-caps-tight)}
+    margin:0}
   .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-head{
-    gap:var(--head-gap);margin:calc(var(--s) * .015) 0 0}
+    gap:var(--head-gap)}
   .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-head .bub-time{
-    font-size:max(22px,calc(var(--s) * .27));letter-spacing:-.03em}
+    letter-spacing:-.03em}
   .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-rail{
     height:calc(var(--s) * .1)}
   .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-foot{
-    margin:auto calc(var(--side) * -1) 0;padding:0 var(--side);
+    margin:0 calc(var(--side) * -1) 0;padding:0 var(--side);
     height:calc(var(--s) * .27);border-radius:0;box-shadow:inset 0 1px 0 var(--ev-seam);
-    font:700 max(10.5px,calc(var(--s) * .112))/calc(var(--s) * .27) var(--sans)}
-  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-foot strong{
-    font:inherit;letter-spacing:-.005em}
-  .daycard:not(.is-dense) .schedule-bub.is-tall.is-run:is(.counter,.via-app):not(.is-face):not(.is-timer) .ev-foot em{
-    font:inherit;font-weight:600;font-size:.92em;letter-spacing:.01em;opacity:.66}
+    align-items:center}
 }
 .schedule-bub strong{display:block;max-width:100%;font:700 12px/1.15 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .schedule-bub em{display:block;max-width:100%;font:600 11px/1.2 var(--sans);font-style:normal;opacity:.7;
@@ -309,6 +305,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
    instead, which is the one failure that stays inside the card. */
 .ev-rail{position:relative;flex:1 1 auto;min-width:14px;display:flex;align-items:center;
   gap:max(4px,calc(var(--s,44px) * .04))}
+.is-run .ev-rail{flex:0 0 46px}
 /* The rail's two segments stay down while the chip is up. Centred on the rail,
    the chip left a segment emerging either side of it, which reads as a line
    struck through the duration rather than a run of time behind it. The space
@@ -333,6 +330,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   border-radius:0 0 18px 18px;background:var(--ev-band);box-shadow:inset 0 1px 0 var(--ev-seam)}
 .is-run .ev-foot strong{flex:0 1 auto}
 .is-run .ev-foot em{flex:none;opacity:.9}
+/* Keep the contact details in their existing footer band, but read them as one
+   centred identity rather than two unrelated values pinned to opposite edges. */
+.is-run:not(.is-owed) .ev-foot{justify-content:center;gap:0}
+.is-run:not(.is-owed) .ev-foot strong + em::before{content:"-";display:inline-block;margin:0 4px;opacity:.72}
 /* Light fills deepen with ink, the dark fill lifts with paper. The default pair
    comes from the theme, so a card needs no dark-mode rule of its own. */
 .schedule-bub{--ev-band:var(--band-wash);--ev-seam:var(--seam-wash)}
@@ -371,20 +372,26 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .schedule-open.full{box-shadow:0 1px 3px rgba(22,24,28,.06),0 4px 12px rgba(22,24,28,.05)}
 .schedule-open.partial{border-style:dashed;border-color:var(--edge3);background:var(--soft2);
   color:var(--body);box-shadow:none;--ev-accent:var(--edge3)}
+.schedule-open.is-unbookable,.schedule-open.is-unbookable:hover{
+  border-style:dashed;border-color:var(--edge3);background:var(--soft2);color:var(--muted);
+  box-shadow:none;filter:none;transform:none}
 /* An open card is a taken card with nothing sold on it, so it is composed the
    same way: the tag holds the top-left, the two ends hold the outer edges, and
    the slack falls between them. It was centring both fragments instead, which
    left the tag floating and the times adrift of the card's own edges. */
 .schedule-bub.schedule-open{justify-content:flex-start;align-items:stretch;gap:0;text-align:left}
-.schedule-open .ev-head{margin-block:auto;width:100%}
+.schedule-open .ev-head{margin-block:auto;width:max-content;max-width:100%;align-self:center}
 .schedule-open .bub-time{color:inherit;font-weight:800}
-.schedule-bub.schedule-open small{margin:0;color:var(--lime-txt);opacity:1;font-weight:700;letter-spacing:.11em}
+.schedule-bub.schedule-open small{margin:0;color:inherit;opacity:.62}
 .schedule-open .ev-rail i{opacity:.75}
-.schedule-open.partial small{color:var(--muted)}
-/* A half hour drops the tag and the chip and states only its two ends. */
-.schedule-cell.compact .schedule-open{padding:0 13px}
+/* Bookable compact openings use a two-row stack so the OPEN heading never
+   competes with the time range. Disabled half-hour gaps omit the heading and
+   the remaining time row stays centred by the same layout. */
+.schedule-cell.compact .schedule-open{flex-direction:column;align-items:stretch;justify-content:center;
+  gap:2px;padding:2px 13px}
+.schedule-cell.compact .schedule-open small{display:block;flex:none}
 .schedule-cell.compact .schedule-open.is-run .ev-head .bub-time{font-size:13.5px}
-.schedule-cell.compact .schedule-open .ev-head{gap:10px}
+.schedule-cell.compact .schedule-open .ev-head{gap:10px;margin:0}
 /* ── the leftover of a part-booked hour ──
    Stated rather than drawn. A split fill has to clip the label it sits on and
    still leaves you measuring a stripe by eye; a number is read once and is
@@ -423,14 +430,15 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .is-dense .schedule-bub strong{flex:1 1 auto;min-width:0;font:700 10.5px/1 var(--sans);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .is-dense .schedule-open strong{font:700 10.5px/1 var(--disp);letter-spacing:.1em;opacity:.6}
-/* A half hour is 22px collapsed and can only carry its own time. */
+/* A half hour in the expanded timeline can only carry its own time. */
 .is-dense .schedule-cell.compact .schedule-bub{padding:1px 10px;border-radius:7px}
 .is-dense .schedule-cell.compact .schedule-bub .bub-time{font-size:10px;opacity:.72}
 .is-dense .schedule-open.partial{background:transparent;border-style:dashed;border-color:var(--edge2)}
-/* The week grid collapses on the same switch. */
-.is-dense .bub{height:22px;border-radius:8px;font-size:10.5px}
+/* Match the reference compact grid: substantial rows, pill corners and the
+   same label scale it used before the timeline view was introduced. */
+.is-dense .bub{height:38px;border-radius:15px;font-size:13px}
 /* the part-booked overlay traces the bubble, so it has to match its radius */
-.is-dense .bub .ovl{border-radius:9px}
+.is-dense .bub .ovl{border-radius:15px}
 .is-dense .bub-indicator{display:none}
 /* ── arriving, ready, running ──
    The action sits on the card's top-right, opposite the kind tag, because that
@@ -935,6 +943,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .tm-mini button:hover{background:rgba(255,255,255,.22);color:#fff}
 .tm-btn.is-end{background:#4A1A16;color:var(--red)}
 .tm-btn.is-end:hover{background:var(--red);color:#fff}
+/* Narrow pitch columns cannot fit a clock between two full-size controls.
+   Give the controls their own lower row so neither covers the countdown. */
+@container (max-width:239px){
+  .schedule-bub.is-timer .tm{height:100%;padding:4px 6px 38px}
+  .schedule-cell[data-state="running"]>.tm-acts{align-items:flex-end;padding:0 10px 7px}
+  .schedule-cell[data-state="running"]>.tm-acts .tm-btn{width:30px;height:30px}
+  .schedule-bub.is-timer .tm-count{font-size:max(22px,min(14cqw,calc(var(--tm,130px) * .338)))}
+}
 /* The outline is the countdown. It traces the card's own edge at the card's own
    radius, so the card is the progress bar rather than carrying one. */
 .tm-ring{position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);
@@ -1068,6 +1084,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
   --paper:#232323;          /* raised surface */
   --soft:#1B1B1B;           /* recessed surface */
   --soft2:#1E1E1E;
+  --schedule-canvas:#181916;
   --edge:#2C2C2C;
   --edge2:#303030;
   --edge3:#3C3C3C;
@@ -1473,12 +1490,13 @@ button.dayhead:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .bandrow{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px;margin-bottom:9px}
 
 /* ── day view: one date, pitches as columns ── */
-/* The day card is always paper, whatever the pitch colours are set to — but it
-   still declares the tint tokens, so shared band/header styling that mixes
-   against --tint-fg resolves here instead of dropping. */
+/* The pitch header stays paper through --tint-bg, while the schedule beneath
+   it sits on a warmer canvas. White open cards therefore read as deliberate
+   surfaces instead of disappearing into the board, without changing their
+   established availability colour. */
 .daycard{--tint-bg:var(--paper);--tint-line:var(--edge);--tint-fg:var(--ink);
   --tint-soft:var(--muted);--tint-chip:var(--soft);--tint-chip-fg:var(--ink);
-  background:var(--paper);border-color:var(--edge);color:var(--ink)}
+  background:var(--schedule-canvas);border-color:var(--edge);color:var(--ink)}
 .daycard .grid-soft.dark{color:var(--muted)}
 .rbtn.sm{width:32px;height:32px;font-size:13px}
 .dayjump{display:flex;gap:6px;flex-wrap:wrap;padding:12px 0 2px}
@@ -1581,31 +1599,23 @@ button.pitchcol:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   grid-template-rows:repeat(var(--rows),var(--schedule-row));column-gap:12px;padding:10px 0 14px}
 .schedule-hour{grid-column:1;grid-row:var(--grid-row)/span var(--grid-span,1);min-height:var(--schedule-row)}
 .is-tall .ev-head{gap:10px}
-.is-tall .ev-foot strong{font-size:12.5px}
 /* The kind tag labels the card from the top edge instead of trailing it. */
 .is-run small{margin-top:0;align-self:flex-start;opacity:.62;line-height:1}
 .schedule-open strong{color:var(--lime-txt);font:800 12.5px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase}
 /* ── collapsed rows ──
-   Sixteen hours across three pitches is a lot of scrolling to answer "what is
-   free tonight?". Collapsed, a row is 22px instead of 44 and every card falls
-   to a single line, so the whole trading day lands on one screen and the
-   question is answered by the pattern of fills rather than by reading. Nothing
-   is hidden that changes the answer — the times and the fills stay; the rail,
-   the band, the number and the tag are detail for when you have picked one. */
+   Compact keeps the reference board's comfortable 38px touch targets and 6px
+   rhythm while removing the expanded timeline's secondary information. The
+   result is still quicker to scan, without turning each slot into a tiny chip. */
 /* Collapsed, the day board stops being a timeline and becomes a table: one row
    per hour, one column per pitch, every cell the same size. A timeline answers
    "how long is this booking?" — which is not the question being asked when you
    are scanning for a free evening. A grid answers "which of these is free?" in
    one pass, because every cell occupies the same amount of eye. */
-.gridcard.is-dense{--schedule-row:22px;--dense-time:92px}
+.gridcard.is-dense{--schedule-row:38px;--dense-time:92px}
 .is-dense .daycard .bandrow,.daycard.is-dense .bandrow{grid-template-columns:72px repeat(var(--cols),minmax(0,1fr));
-  gap:5px;margin-bottom:4px}
-/* Twice the rows means the hour has to stay findable: the on-the-hour line
-   keeps a full-strength label and a little more air above it, the half hour
-   reads as its subdivision rather than as an equal peer. */
+  gap:6px;margin-bottom:6px}
 .is-dense .hourlbl{font:700 10px var(--sans);font-variant-numeric:tabular-nums}
-.is-dense .band-head{padding-top:5px;padding-bottom:5px}
-.is-dense .band{margin-bottom:3px}
+.is-dense .band-head{padding-top:7px;padding-bottom:7px}
 /* the sticky block is permanent chrome; collapsed, it gives height back too */
 .is-dense .calcols,.is-dense .pitchstrip{padding:6px 0 7px}
 /* Collapsed, the header still has to name its column. The rule here used to be

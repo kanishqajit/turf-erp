@@ -1,5 +1,5 @@
 import { DOW, DOWL, END_HOUR, GROUP_DISCOUNTS, MON, PAY_FORM, PITCHES, PITCH_PALETTE, START_HOUR } from '../constants.js';
-import { clock12, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, relDay, rng12, slotRng12, t12,
+import { clock12, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, minuteAt, relDay, rng12, slotRng12, t12,
   TODAY_DI, toMin } from '../datetime.js';
 import { blockAtTime, bookingAtTime, bookingWindow, bookingWindowAt, chipCls, coverage, esc, FLOODLIGHT_FEE, hbar, holdAtTime, needsFloodlights, priceFor,
   label, money, outstandingFor, pitchColorFor, segCls, sourceFor, statusAtTime, statusFor, tintFor, tintVars, validContact, weekStart } from '../domain.js';
@@ -251,10 +251,11 @@ function liveStateFor(booking, di){
      going over rather than by being redrawn somewhere else. */
   if (booking.status === 'running'){
     const total = Math.max(1, booking.end - booking.start);
-    const from = booking.startedAt == null ? booking.start : booking.startedAt;
+    const from = (booking.startedAt == null ? booking.start : booking.startedAt)+(booking.pausedMilliseconds||0)/60000;
     const until = from + total;
-    return { mode:'running', id:booking.id, start:from, end:until,
-      pct:clamp((now - from) / total, 0, 1) * 100, over:now > until };
+    const at=booking.pausedAt?minuteAt(booking.pausedAt):now;
+    return { mode:'running', id:booking.id, start:from, end:until, paused:!!booking.pausedAt,at,
+      pct:clamp((at - from) / total, 0, 1) * 100, over:at > until };
   }
   if (booking.status !== 'upcoming' || now >= booking.end) return null;
   if (now < booking.start - ARRIVAL_WINDOW) return null;
@@ -267,7 +268,7 @@ function liveStateFor(booking, di){
    moving, so they ride a size down inside their own element rather than taking
    equal weight. Past an hour the hour joins the minutes and the seconds stay
    where they are. */
-export function countTxt(endMinute){
+export function countTxt(endMinute,at=nowMin()){
   /* Through nowMin like everything else on the board: reading the wall clock
      directly here let the countdown and the ring around it disagree, since the
      ring measures elapsed time from the same nowMin the now-line uses. */
@@ -275,7 +276,7 @@ export function countTxt(endMinute){
      zero says only "time is up"; the number an operator actually needs is how
      far over the pitch has run, because that is what they are about to charge
      for or apologise about. The "+" is what marks the turn. */
-  const raw = Math.round((endMinute - nowMin()) * 60);
+  const raw = Math.round((endMinute - at) * 60);
   const over = raw < 0, left = Math.abs(raw);
   const hh = Math.floor(left / 3600), mm = Math.floor((left % 3600) / 60), ss = left % 60;
   const pad = value => String(value).padStart(2, '0');
@@ -328,8 +329,8 @@ function liveActionHtml(live){
      number being read off centre. */
   if (live.mode === 'running')
     return `<span class="tm-acts">
-      <button class="tm-btn" data-act="stop-timer" data-id="${esc(live.id)}"
-        title="Stop the timer" aria-label="Stop the timer">${ICONS.pause}</button>
+      <button class="tm-btn" data-act="${live.paused?'resume-clock':'pause-clock'}" data-id="${esc(live.id)}"
+        title="${live.paused?'Resume':'Pause'} the timer" aria-label="${live.paused?'Resume':'Pause'} the timer">${live.paused?ICONS.play:ICONS.pause}</button>
       <button class="tm-btn is-end" data-act="end-game" data-id="${esc(live.id)}"
         title="End session" aria-label="End session">${ICONS.cross}</button></span>`;
   if (live.mode === 'owed')
@@ -361,8 +362,8 @@ function liveFaceHtml(live, { time, detail, contact, from, to }){
      end only when the session started on time. */
   if (live.mode === 'running')
     return `<span class="tm">
-      <span class="tm-top">${ICONS.bell}Ends ${esc(t12(live.end))}</span>
-      <b class="tm-count${live.over ? ' is-over' : ''}" data-count data-to="${live.end}">${countTxt(live.end)}</b>
+      <span class="tm-top">${live.paused?'Paused':ICONS.bell+'Ends '+esc(t12(live.end))}</span>
+      <b class="tm-count${live.over ? ' is-over' : ''}" data-count data-clock-at="${live.paused?live.at:''}" data-to="${live.end}">${countTxt(live.end,live.at)}</b>
       <span class="tm-sub">${who}</span></span>`;
   return `<span class="ev-face">
     <span class="ev-face-top">${esc(time)}</span>
@@ -370,7 +371,7 @@ function liveFaceHtml(live, { time, detail, contact, from, to }){
     <span class="ev-face-sub">${who}</span></span>`;
 }
 
-function scheduleBubble({ cls, title, di, pitch, start, span, time, detail = '', meta = '', contact = '', from = null, to = null, live = null, lane = null, openRun = false, groupColor = null }){
+function scheduleBubble({ cls, title, di, pitch, start, span, time, detail = '', meta = '', contact = '', from = null, to = null, live = null, lane = null, openRun = false, groupColor = null, disabled = false }){
   const [timePx, bandPad] = EV_SCALE[span] || (span < 2 ? [15, 6] : [29, 22]);
   /* The group tag rides inside the kind label rather than taking space of its
      own: the card is already tight at an hour, and a dot beside "Counter" reads
@@ -409,7 +410,8 @@ function scheduleBubble({ cls, title, di, pitch, start, span, time, detail = '',
       live ? ' is-' + live.mode : ''}${live && live.mode === 'running' ? ' is-timer' : ''}${
       onstage && live.mode !== 'running' ? ' is-face' : ''}${
       live && ['arriving','ready','owed'].includes(live.mode) ? ' has-tray' : ''}${
-      live && span <= 3 ? ' is-short' : ''}${live && span === 2 ? ' is-live-hour' : ''}" title="${esc(title)}" data-act="slot" data-di="${di}" data-hi="${recordHi({ start })}"
+      live && span <= 3 ? ' is-short' : ''}${live && span === 2 ? ' is-live-hour' : ''}" title="${esc(title)}"${
+        disabled ? ' disabled aria-disabled="true"' : ' data-act="slot"'} data-di="${di}" data-hi="${recordHi({ start })}"
       data-pi="${pitch}" data-offset="${start % 60}"${from == null ? '' : ` data-from="${
         live && live.mode === 'running' ? live.start : from}" data-to="${
         live && live.mode === 'running' ? live.end : to}"`}
@@ -511,21 +513,18 @@ function scheduleHtml(di, showNow){
       cursor = Math.max(cursor, to);
     }
     if (cursor < endMin) gaps.push([cursor, endMin]);
-    /* A gap is cut into the lengths it can actually be sold in — whole hours
-       measured from where the gap starts, not from the clock, so 11:30 to 12:30
-       is one slot rather than two halves either side of noon. What is left over
-       is a half hour, and it is still a normal sellable slot.
-
-       The dotted treatment is reserved for the one case that deserves a
-       warning: a lone half hour with a booking hard against both sides. That is
-       the slot nobody can grow, and the only one worth drawing as awkward. */
-    const emit = (from, to, wedged) => {
+    /* A gap is cut into whole hours measured from where the gap starts, not
+       from the clock, so 11:30 to 12:30 remains one sellable slot. Any remainder
+       under the venue's one-hour minimum is still shown to explain the gap, but
+       it is dotted and disabled rather than advertised as bookable inventory. */
+    const emit = (from, to) => {
       const span = rowSpan(from, to);
-      const selected = selectedStart >= from && selectedStart < to;
-      pieces.push(scheduleBubble({ cls:`bub schedule-open ${wedged ? 'partial' : 'full'}${selected ? ' sel' : ''}`,
-        title:`${wedged ? 'Half hour between bookings' : 'Open'} · ${rng12(from, to)}`,
+      const unavailable = to - from < 60;
+      const selected = !unavailable && selectedStart >= from && selectedStart < to;
+      pieces.push(scheduleBubble({ cls:`bub schedule-open ${unavailable ? 'partial is-unbookable' : 'full'}${selected ? ' sel' : ''}`,
+        title:`${unavailable ? 'Unavailable · Minimum booking is 1 hour' : 'Open'} · ${rng12(from, to)}`,
         di, pitch, start:from, span, time:rng12(from, to),
-        meta:wedged ? 'Half hour' : 'Open', from, to, openRun:true }));
+        meta:unavailable ? '' : 'Open', from, to, openRun:true, disabled:unavailable }));
     };
     /* The board sells hours, so open time is drawn in hours and a leftover half
        hour is drawn as itself — never as a 90-minute bubble, which is not a
@@ -535,18 +534,16 @@ function scheduleHtml(di, showNow){
        free halves either side of an hour boundary arrive here as a single
        60-minute run and come out as one bubble rather than two.
 
-       That leaves the half hours. One is dotted only when the whole gap is a
-       half hour with a booking hard against both ends — the slot nobody can
-       grow. A half hour that trails an open hour is ordinary sellable time and
-       reads as a normal open slot, just shorter, because that is what it is. */
+       Any half hour left after those full-hour runs is visible context, not a
+       booking target: it cannot satisfy the venue's one-hour minimum. */
     /* An open slot is a run of time too, so it is drawn like one — tag, then the
        two ends with the rail between them. It used to centre a single range,
        which left open time as the only thing on the board with its own grammar. */
     gaps.forEach(([from, to]) => {
-      if (to - from <= 30) return emit(from, to, from > startMin && to < endMin);
+      if (to - from <= 30) return emit(from, to);
       let cursor = from;
-      while (to - cursor >= 60){ emit(cursor, cursor + 60, false); cursor += 60; }
-      if (cursor < to) emit(cursor, to, false);
+      while (to - cursor >= 60){ emit(cursor, cursor + 60); cursor += 60; }
+      if (cursor < to) emit(cursor, to);
     });
   });
   const now = showNow ? nowMin() : null;

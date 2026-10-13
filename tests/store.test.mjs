@@ -470,3 +470,18 @@ test('a pitch runs one match at a time', () => {
     assert.equal(store.setStatus(second.id, 'running', operator, '', minute, ready.version).status, 'running');
   } finally { store.close(); }
 });
+
+test('today till counts receipt dates independently of booking dates and subtracts refunds',()=>{
+  const {store,owner}=fixture();
+  try{
+    const a=store.createBookings([{date:'2027-01-01',pitch:0,start:600,end:660,team:'Future FC',contact:'9000000001'}],owner)[0];
+    const b=store.createBookings([{date:'2025-01-01',pitch:1,start:600,end:660,team:'Past FC',contact:'9000000002'}],owner)[0];
+    store.recordPayment(a.id,{amount:500,mode:'Cash',idempotencyKey:crypto.randomUUID()},owner);
+    store.recordPayment(b.id,{amount:200,mode:'UPI',reference:'test-upi-001',idempotencyKey:crypto.randomUUID()},owner);
+    const oldId=crypto.randomUUID();
+    store.db.prepare("INSERT INTO payment_events (id,booking_id,amount,mode,kind,created_by,created_at) VALUES (?,?,100,'Cash','refund',?,?)").run(crypto.randomUUID(),a.id,owner.id,new Date().toISOString());
+    store.db.prepare("INSERT INTO payment_events (id,booking_id,amount,mode,created_by,created_at) VALUES (?,?,300,'Card',?,?)").run(oldId,b.id,owner.id,new Date(Date.now()-3*86400000).toISOString());
+    const state=store.listState('2027-01-01','2027-01-01');
+    assert.deepEqual(state.till.by,{Cash:400,UPI:200,Card:0});assert.equal(state.till.total,600);
+  }finally{store.close();}
+});

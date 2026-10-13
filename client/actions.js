@@ -202,8 +202,8 @@ async function handleClick(event){
     /* The theme is a property of the page, not of any view, so it is written to
        the document root rather than threaded through the render. */
     case 'toggle-theme':S.theme=S.theme==='dark'?'light':'dark';applyTheme();savePrefs();break;
-    case 'check-in':S.checkedIn[id]=Date.now();savePrefs();break;
-    case 'undo-check-in':delete S.checkedIn[id];savePrefs();break;
+    case 'check-in':{const b=sessionById(id);if(b)await mutate('/api/bookings/'+id+'/check-in',{checked:true,version:b.version});break;}
+    case 'undo-check-in':{const b=sessionById(id);if(b)await mutate('/api/bookings/'+id+'/check-in',{checked:false,version:b.version});break;}
     /* Starting from the board is the same transition the Sessions rail makes,
        so it goes through the same endpoint and the same version check. */
     case 'start-on-board':askTimer(id);break;
@@ -213,6 +213,7 @@ async function handleClick(event){
        manager for. There is no pause in the model: stopping returns the session
        to upcoming, and starting it again is how it resumes. */
     case 'end-game':S.doneAsk=id;break;
+    case 'pause-clock':case 'resume-clock':{const b=sessionById(id);if(b)await mutate('/api/bookings/'+id+'/clock',{action:action==='pause-clock'?'pause':'resume',version:b.version});break;}
     case 'stop-timer':{const session=sessionById(id);if(!session)break;
       S.actionAsk={kind:'status',id:session.id,target:'upcoming',title:'Stop the timer',
         subject:`${session.team} · ${rng12(session.start,session.end)} · running → upcoming`};

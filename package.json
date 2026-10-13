@@ -9,10 +9,24 @@
   "scripts": {
     "dev": "node --watch server.mjs",
     "start": "node server.mjs",
+    "start:supabase": "node --env-file=.env.supabase.local server.mjs",
+    "prototype": "node scripts/prototype.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
     "seed:volume": "node scripts/seed-volume.mjs",
     "backup": "node scripts/backup.mjs",
     "test": "node --test",
-    "check": "node scripts/check-syntax.mjs && node --test"
+    "check": "node scripts/check-syntax.mjs && node --test",
+    "build:frontend": "node scripts/build-frontend.mjs",
+    "build:edge": "node scripts/build-edge.mjs",
+    "check:portable": "node scripts/check-portable.mjs",
+    "build:pages": "node scripts/build-pages.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "supabase": "2.120.0",
+    "wrangler": "4.150.0"
+  },
+  "dependencies": {
+    "sql.js": "1.13.0"
   }
 }

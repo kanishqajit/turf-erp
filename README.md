@@ -33,6 +33,11 @@ state without an authenticated API session.
 
 ## Run locally
 
+For a client demonstration with the customer checkout at the sibling
+`../Turf-app` folder, run `npm run prototype`. This uses a separate
+`data/prototype.sqlite` demo ledger. See [PROTOTYPE.md](PROTOTYPE.md) for the
+three screens, demo sign-in, API contract, configuration and remaining live-launch work.
+
 Node 22.5 or newer is required for the built-in SQLite driver.
 
 ```bash

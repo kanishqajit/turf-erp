@@ -29,6 +29,10 @@ export const nowMin = () => {
   const now = new Date();
   return now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60 + now.getMilliseconds() / 60000;
 };
+export const minuteAt = timestamp => {
+  const date=new Date(timestamp);
+  return date.getHours()*60+date.getMinutes()+date.getSeconds()/60+date.getMilliseconds()/60000;
+};
 export const toMin = value => {
   const parts = String(value).split(':');
   return Number(parts[0]) * 60 + (Number(parts[1]) || 0);

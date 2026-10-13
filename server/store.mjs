@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -210,6 +211,9 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
   if (!userColumns.has('password_changed_at')) db.exec('ALTER TABLE users ADD COLUMN password_changed_at TEXT');
   const bookingColumns = new Set(db.prepare('PRAGMA table_info(bookings)').all().map(column => column.name));
   if (!bookingColumns.has('group_color')) db.exec('ALTER TABLE bookings ADD COLUMN group_color TEXT');
+  if (!bookingColumns.has('checked_in_at')) db.exec('ALTER TABLE bookings ADD COLUMN checked_in_at INTEGER');
+  if (!bookingColumns.has('paused_at')) db.exec('ALTER TABLE bookings ADD COLUMN paused_at INTEGER');
+  if (!bookingColumns.has('paused_milliseconds')) db.exec('ALTER TABLE bookings ADD COLUMN paused_milliseconds INTEGER NOT NULL DEFAULT 0');
   const paymentColumns = new Set(db.prepare('PRAGMA table_info(payment_events)').all().map(column => column.name));
   if (!paymentColumns.has('reference')) db.exec("ALTER TABLE payment_events ADD COLUMN reference TEXT NOT NULL DEFAULT ''");
   if (!paymentColumns.has('idempotency_key')) db.exec('ALTER TABLE payment_events ADD COLUMN idempotency_key TEXT');
@@ -268,11 +272,13 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
 
   function sessionUser(token){
     if (!token) return null;
-    const row = db.prepare(`SELECT s.id AS session_id,s.csrf_token,s.expires_at,u.id,u.email,u.name,u.role,u.must_change_password
+    const row = db.prepare(`SELECT s.id AS session_id,s.csrf_token,s.expires_at,s.last_seen_at,u.id,u.email,u.name,u.role,u.must_change_password
       FROM sessions s JOIN users u ON u.id=s.user_id
       WHERE s.token_hash=? AND s.expires_at>? AND s.last_seen_at>? AND u.active=1`).get(tokenHash(token), nowMs(), nowMs() - sessionIdleMs);
     if (!row) return null;
-    db.prepare('UPDATE sessions SET last_seen_at=? WHERE id=?').run(nowMs(), row.session_id);
+    // Coalesce the parallel state/account reads into a single cloud heartbeat.
+    if(nowMs()-row.last_seen_at>=Math.min(30000,sessionIdleMs/4))
+      db.prepare('UPDATE sessions SET last_seen_at=? WHERE id=?').run(nowMs(), row.session_id);
     return row;
   }
 
@@ -356,6 +362,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       team:row.team, contact:row.contact, notes:row.notes, source:row.source, kind:row.kind,
       groupType:row.group_type, groupId:row.group_id, groupColor:row.group_color, status:row.status,
       startedAt:row.started_at, endedAt:row.ended_at, amount:row.total_amount,
+      checkedInAt:row.checked_in_at,pausedAt:row.paused_at,pausedMilliseconds:row.paused_milliseconds||0,
       discount:row.discount_amount, collected:paid,
       collectedByMode:{ Cash:Number(row.collected_cash || 0), UPI:Number(row.collected_upi || 0), Card:Number(row.collected_card || 0) },
       advance:due > 0 ? paid : 0, pay:due === 0 ? 'Payment done' : paid > 0 ? 'Advance paid' : 'Payment at venue',
@@ -384,7 +391,19 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       id:row.id,date:row.date,pitch:row.pitch,start:row.start,end:row.end,reason:row.reason,
       createdBy:row.created_by_name,createdAt:row.created_at,
     }));
-    return { bookings, holds, blocks, settings:getSettings(), serverTime:new Date().toISOString(), timeZone };
+    return { bookings, holds, blocks, settings:getSettings(), till:todayTakings(), serverTime:new Date().toISOString(), timeZone };
+  }
+
+  function todayTakings(){
+    const dayFormat=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'});
+    const date=dayFormat.format(new Date(nowMs()));
+    const midnight=Date.parse(date+'T00:00:00Z');
+    const from=new Date(midnight-86400000).toISOString(),to=new Date(midnight+2*86400000).toISOString();
+    const by={Cash:0,UPI:0,Card:0};
+    for(const event of db.prepare('SELECT amount,mode,kind,created_at FROM payment_events WHERE created_at>=? AND created_at<?').all(from,to)){
+      if(dayFormat.format(new Date(event.created_at))===date)by[event.mode]+=(event.kind==='refund'?-1:1)*event.amount;
+    }
+    return {date,by,total:by.Cash+by.UPI+by.Card};
   }
 
   function listAccounts(from, to, actor){
@@ -422,7 +441,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
     });
   }
 
-  function createHold(input, actor){
+  function createHold(input, actor, { afterCreate } = {}){
     requireRole(actor, 'operator');
     const window = validateWindow(input);
     const team = clean(input.team, 120), contact = clean(input.contact, 80);
@@ -435,20 +454,23 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(hold.id,hold.date,hold.pitch,hold.start,hold.end,hold.team,hold.contact,
         hold.notes,hold.pay,hold.expiresAt,actor.id,isoNow());
       audit(actor, 'hold.created', 'hold', hold.id, null, hold);
+      if (afterCreate) afterCreate(hold);
       return hold;
     });
   }
 
-  function confirmHold(id, actor){
+  function confirmHold(id, actor, { source = 'counter', afterConfirm } = {}){
     requireRole(actor, 'operator');
     return tx(() => {
       const hold = db.prepare('SELECT * FROM holds WHERE id=? AND expires_at>?').get(id, nowMs());
       if (!hold) fail(409, 'hold_expired', 'This hold has expired or was released.');
       assertAvailable(hold, { ignoreHoldId:id });
       const record = normalizeBooking({ ...hold, kind:'standard' }, actor);
+      record.source = source === 'app' ? 'app' : 'counter';
       insertBooking(record, actor);
       db.prepare('DELETE FROM holds WHERE id=?').run(id);
       audit(actor, 'hold.confirmed', 'hold', id, hold, { bookingId:record.id });
+      if (afterConfirm) afterConfirm(record);
       return getBooking(record.id);
     });
   }
@@ -589,9 +611,43 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
         ? started : statedEnd;
       db.prepare(`UPDATE bookings SET status=?,started_at=?,ended_at=?,version=version+1,updated_at=? WHERE id=?`)
         .run(status, started, ended, isoNow(), id);
+      const pausedTotal=['running','upcoming'].includes(status)?0:
+        (before.pausedMilliseconds||0)+(before.pausedAt?Math.max(0,nowMs()-before.pausedAt):0);
+      db.prepare('UPDATE bookings SET checked_in_at=NULL,paused_at=NULL,paused_milliseconds=? WHERE id=?').run(pausedTotal,id);
       const after = getBooking(id);
       audit(actor, `booking.status.${status}`, 'booking', id, before, after, reason);
       return after;
+    });
+  }
+
+  function checkIn(id, checked, actor, expectedVersion){
+    requireRole(actor,'operator');
+    if(typeof checked!=='boolean')fail(400,'invalid_check_in','Supply a check-in state.');
+    return tx(()=>{
+      const before=getBooking(id);if(!before)fail(404,'not_found','Booking not found.');
+      assertVersion(before,expectedVersion);
+      if(before.status!=='upcoming')fail(409,'cannot_check_in','Only an upcoming match can be checked in.');
+      if(!!before.checkedInAt===checked)return before;
+      db.prepare('UPDATE bookings SET checked_in_at=?,version=version+1,updated_at=? WHERE id=?').run(checked?nowMs():null,isoNow(),id);
+      const after=getBooking(id);audit(actor,checked?'booking.checked_in':'booking.check_in_undone','booking',id,before,after);return after;
+    });
+  }
+
+  function controlClock(id, action, actor, expectedVersion){
+    requireRole(actor,'operator');
+    if(!['pause','resume'].includes(action))fail(400,'invalid_clock_action','Choose pause or resume.');
+    return tx(()=>{
+      const before=getBooking(id);if(!before)fail(404,'not_found','Booking not found.');assertVersion(before,expectedVersion);
+      if(before.status!=='running')fail(409,'clock_not_running','Start the session before changing its clock.');
+      if(action==='pause'){
+        if(before.pausedAt)return before;
+        db.prepare('UPDATE bookings SET paused_at=?,version=version+1,updated_at=? WHERE id=?').run(nowMs(),isoNow(),id);
+      }else{
+        if(!before.pausedAt)return before;
+        db.prepare('UPDATE bookings SET paused_at=NULL,paused_milliseconds=paused_milliseconds+?,version=version+1,updated_at=? WHERE id=?')
+          .run(Math.max(0,nowMs()-before.pausedAt),isoNow(),id);
+      }
+      const after=getBooking(id);audit(actor,'booking.clock.'+action,'booking',id,before,after);return after;
     });
   }
 
@@ -761,7 +817,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
 
   return { db, close:() => db.close(), createUser, authenticate, createSession, sessionUser, deleteSession,
     deleteExpired, createBookings, getBooking, listState, listAccounts, createHold, confirmHold, releaseHold,
-    createBlock, releaseBlock, releaseBooking, setStatus, extendBooking, recordPayment, recordRefund, listAudit,
+    createBlock, releaseBlock, releaseBooking, setStatus, checkIn, controlClock, extendBooking, recordPayment, recordRefund, listAudit,
     getSettings, updateSettings, changePassword, listUsers, setUserActive, revokeUserSessions, recordAuthEvent,
     bootstrapFromEnv, requireRole };
 }

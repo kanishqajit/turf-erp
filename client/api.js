@@ -42,6 +42,7 @@ export async function loadState(){
   if (today < from || today > to) states.push(await apiRequest(`/api/state?from=${today}&to=${today}`));
   const merge = key => Array.from(new Map(states.flatMap(state => state[key]).map(record => [record.id, record])).values());
   S.bookings = merge('bookings');
+  S.checkedIn=Object.fromEntries(S.bookings.filter(b=>b.checkedInAt).map(b=>[b.id,b.checkedInAt]));
   S.holds = merge('holds');
   S.blocks = merge('blocks');
   S.settings = states[0].settings || { depositAmount:500 };
