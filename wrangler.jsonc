@@ -1,5 +1,15 @@
 {
   "name": "futly-prototype",
   "pages_build_output_dir": "./dist",
-  "compatibility_date": "2026-10-13"
+  "compatibility_date": "2026-10-13",
+  "env": {
+    "production": {
+      "vars": {
+        "TURF_SUPABASE_URL": "https://ofjgkrobvzwqkuqgxdho.supabase.co"
+      }
+    },
+    "preview": {
+      "vars": {}
+    }
+  }
 }

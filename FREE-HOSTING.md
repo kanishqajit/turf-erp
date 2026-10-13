@@ -79,6 +79,9 @@ only Pages edit on the hosting account and currently has no expiry.
 
 Cloudflare production bindings contain `TURF_SUPABASE_URL` and encrypted
 `TURF_SUPABASE_SERVER_TOKEN`. Preview environments do not receive the live token.
+The public backend URL is declared in Wrangler's production configuration so
+subsequent CLI deployments retain it; the encrypted token stays in Cloudflare.
+The workflow verifies public API health after publishing.
 The workflow uses the provisioned database and does not automatically reapply
 schema migrations. Current remote migration history is:
 
