@@ -63,14 +63,19 @@ node --env-file=.env.supabase.local --env-file=.env.supabase-test.local scripts/
 
 `prototype-check.yml` runs syntax/regression and portable-engine checks and builds
 the deployment. `prototype-deploy.yml` deploys the backend first, then the
-frontend, from `codex/free-cloudflare-supabase-prototype`. Deployment stays
-disabled until `FUTLY_DEPLOY_ENABLED=true` and these repository secrets exist:
+frontend, from `codex/free-cloudflare-supabase-prototype`. Automatic deployment
+is enabled with `FUTLY_DEPLOY_ENABLED=true` and these encrypted repository secrets:
 
 The first pushed branch passed GitHub's Prototype checks workflow. The deploy
 workflow correctly skipped while its credential guard was disabled.
 
 * `SUPABASE_ACCESS_TOKEN`: deployment access for the Futly project.
 * `CLOUDFLARE_API_TOKEN`: Pages deployment permission for the Cloudflare account.
+
+The Supabase token is scoped to Futly, with Edge Functions read-write and project
+settings read, and expires 90 days after creation on 13 October 2026. Rotate it
+in GitHub before expiry to keep deployments working. The Cloudflare token grants
+only Pages edit on the hosting account and currently has no expiry.
 
 Cloudflare production bindings contain `TURF_SUPABASE_URL` and encrypted
 `TURF_SUPABASE_SERVER_TOKEN`. Preview environments do not receive the live token.
