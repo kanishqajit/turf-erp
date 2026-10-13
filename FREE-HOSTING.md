@@ -47,6 +47,11 @@ booking, conflicts, idempotent confirmation, guest isolation, staff visibility,
 cancellation reopening availability and logout. Synthetic unpaid verification
 bookings are labelled Edge Verification FC and cancelled afterward.
 
+Public browser verification also passed operator sign-in and customer booking
+confirmation/cancellation (Browser Verification FC). The staff phone console
+loaded the shared ledger at 390px without horizontal overflow. Screenshots are
+saved locally under `artifacts/hosting/` and excluded from deployment.
+
 Run the hosted API check with ignored private configuration:
 
 ```sh
@@ -60,6 +65,9 @@ node --env-file=.env.supabase.local --env-file=.env.supabase-test.local scripts/
 the deployment. `prototype-deploy.yml` deploys the backend first, then the
 frontend, from `codex/free-cloudflare-supabase-prototype`. Deployment stays
 disabled until `FUTLY_DEPLOY_ENABLED=true` and these repository secrets exist:
+
+The first pushed branch passed GitHub's Prototype checks workflow. The deploy
+workflow correctly skipped while its credential guard was disabled.
 
 * `SUPABASE_ACCESS_TOKEN`: deployment access for the Futly project.
 * `CLOUDFLARE_API_TOKEN`: Pages deployment permission for the Cloudflare account.
