@@ -52,7 +52,7 @@ const S = {
   pay:'venue', tab:'about', bookTab:'upcoming', split:[], code:'',
   userName:'player', searching:false, q:'', csrf:'', bookings:[], requestKey:null, holdId:null, cancelAsk:null, notice:'',
   from:18*60, to:22*60,           // "Free between…" window, defaults 6 PM → 10 PM
-  availability:{}, loadingVenues:true, loadingAvailability:false, apiError:'',
+  availability:{}, loadingVenues:true, loadingAvailability:false, loadingBookings:true, bookingsError:'', apiError:'',
   customerName:'', customerPhone:'', bookingBusy:false, latestBooking:null,
 };
 
@@ -135,11 +135,20 @@ function dayLabel(){
 }
 
 async function api(path,{ method='GET',body }={}){
+  if(body)await ensureSession();
   const headers=body?{'Content-Type':'application/json','X-CSRF-Token':S.csrf}:{};
   const response=await fetch(API_BASE+path,{ method,headers,credentials:'same-origin',body:body?JSON.stringify(body):undefined });
   const data=await response.json().catch(()=>({}));
   if (!response.ok){const error=new Error(data.error?.message || 'Could not reach Futly. Try again.');error.code=data.error?.code;throw error;}
   return data;
+}
+
+let sessionRequest=null;
+function ensureSession(){
+  if(S.csrf)return Promise.resolve();
+  if(!sessionRequest)sessionRequest=api('/api/public/session').then(data=>{S.csrf=data.csrfToken;})
+    .finally(()=>{sessionRequest=null;});
+  return sessionRequest;
 }
 
 function applyAvailability(venueId,day,data){
@@ -151,16 +160,23 @@ function applyAvailability(venueId,day,data){
   if (venueId===S.turfId && !current.courts.some(court=>String(court.id)===String(S.court))) S.court=String(current.courts[0]?.id ?? '');
 }
 
+const availabilityRequests=new Map();
 async function loadAvailability(venueId,day=S.day,force=false){
   const key=availabilityKey(venueId,day);
+  if(availabilityRequests.has(key))return availabilityRequests.get(key);
   if (!force && S.availability[key]) return S.availability[key];
-  S.loadingAvailability=true;S.apiError='';if(!force)render(true);
-  try {
-    const data=await api(`/api/public/venues/${encodeURIComponent(venueId)}/availability?date=${encodeURIComponent(dateForDay(day))}`);
-    applyAvailability(venueId,day,data);
-    return data;
-  } catch (error) { S.apiError=error.message;throw error; }
-  finally { S.loadingAvailability=false; }
+  S.loadingAvailability=true;S.apiError='';
+  const request=(async()=>{
+    try {
+      const data=await api(`/api/public/venues/${encodeURIComponent(venueId)}/availability?date=${encodeURIComponent(dateForDay(day))}`);
+      applyAvailability(venueId,day,data);
+      return data;
+    } catch (error) { S.apiError=error.message;throw error; }
+    finally { availabilityRequests.delete(key);S.loadingAvailability=availabilityRequests.size>0; }
+  })();
+  availabilityRequests.set(key,request);
+  if(!force)render(true);
+  return request;
 }
 
 async function loadAllAvailability(day=S.day){ await Promise.all(TURFS.map(venue=>loadAvailability(venue.id,day))); }
@@ -174,17 +190,19 @@ async function openTurf(venueId,{ day=0,start=null,court=null }={}){
 }
 
 async function loadVenues(){
+  // Browsing never waits for a guest cookie or the customer's booking history.
+  loadBookings().catch(()=>{}).finally(()=>render(true));
   try {
-    S.csrf=(await api('/api/public/session')).csrfToken;
     const data=await api('/api/public/venues');
     TURFS.splice(0,TURFS.length,...data.venues.map((venue,index)=>({ id:venue.slug,art:venueArt(index),name:venue.name,area:venue.location,
       settings:venue.settings,phone:venue.phone,timeZone:venue.timeZone,dist:0,rate:0,reviews:0,blurb:venueBlurb(venue.name),
       courts:(venue.resources||[]).map(r=>({id:r.id,n:r.name,kind:r.sub,price:r.rate,surface:'Turf'})) })));
     S.turfId=TURFS[0]?.id || '';
     const policy=TURFS[0]?.settings;if(policy){WINDOWS.splice(0,WINDOWS.length,[policy.openMinute,policy.closeMinute]);HOUR_STARTS.splice(0);BLOCKS.splice(0);for(let m=policy.openMinute;m<policy.closeMinute;m+=30){BLOCKS.push(m);if(m%60===0)HOUR_STARTS.push(m);}CLAMP.fromLo=policy.openMinute;CLAMP.fromHi=policy.closeMinute-60;CLAMP.toHi=policy.closeMinute;}
-    await loadAllAvailability(0);await loadBookings();
+    S.loadingVenues=false;render(true);
+    await loadAllAvailability(0);
   } catch (error) { S.apiError=error.message; }
-  finally { S.loadingVenues=false;render(false); }
+  finally { S.loadingVenues=false;render(true); }
 }
 
 /* ─── icons ───────────────────────────────────────────── */
@@ -665,7 +683,8 @@ function screenBookings(){
   return `<div class="pad"><h1 class="t-title">My bookings</h1>
     <p class="t-sub" style="margin:4px 0 20px">Saved for this browser. Staff updates and payments appear here.</p>
     ${S.apiError?`<p class="booking-error" role="alert">${esc(S.apiError)}</p>`:''}
-    ${!S.bookings.length?'<div class="noslots"><b>No bookings yet</b><span class="t-sub">Choose a live slot for your first game.</span></div>':S.bookings.map(b=>{
+    ${S.bookingsError?`<p class="booking-error" role="alert">${esc(S.bookingsError)}</p>`:''}
+    ${!S.bookings.length?(S.loadingBookings?'<div class="noslots"><b>Loading your bookings…</b></div>':S.bookingsError?'':'<div class="noslots"><b>No bookings yet</b><span class="t-sub">Choose a live slot for your first game.</span></div>'):S.bookings.map(b=>{
       const date=new Date(b.date+'T00:00:00');
       const state=b.status==='cancelled'?'Cancelled':b.status==='done'?'Finished':b.status==='running'?(b.paused?'Paused':'In play'):b.status==='noshow'?'No-show':'Confirmed';
       return `<div class="card booking-card" style="margin-bottom:14px"><span class="tag">${state}</span>
@@ -965,14 +984,21 @@ document.addEventListener('keydown', e => {
     document.querySelector('[data-act="search-close"]')?.click();
 });
 
-render();
-loadVenues();
-
 function venueMinute(){
   const parts=new Intl.DateTimeFormat('en',{timeZone:TURFS[0]?.timeZone || 'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date());
   return Number(parts.find(p=>p.type==='hour').value)*60+Number(parts.find(p=>p.type==='minute').value);
 }
-async function loadBookings(){S.bookings=(await api('/api/public/bookings')).bookings;}
+let bookingsRequest=null;
+function loadBookings(){
+  if(bookingsRequest)return bookingsRequest;
+  S.loadingBookings=true;S.bookingsError='';
+  bookingsRequest=(async()=>{
+    try{await ensureSession();S.bookings=(await api('/api/public/bookings')).bookings;}
+    catch(error){S.bookingsError=error.message;throw error;}
+    finally{S.loadingBookings=false;bookingsRequest=null;}
+  })();
+  return bookingsRequest;
+}
 async function cancelBooking(id){
   if(S.bookingBusy)return;S.bookingBusy=true;S.apiError='';render(true);
   try{await api('/api/public/bookings/'+encodeURIComponent(id)+'/cancel',{method:'POST',body:{}});await loadBookings();S.availability={};S.cancelAsk=null;}
@@ -991,7 +1017,7 @@ async function shareBooking(){
 }
 let refreshing=false;
 async function refreshLive(){
-  if(refreshing||S.bookingBusy||document.hidden||document.activeElement?.tagName==='INPUT'||!S.csrf)return;
+  if(refreshing||S.loadingVenues||availabilityRequests.size||S.bookingBusy||document.hidden||document.activeElement?.tagName==='INPUT'||!S.csrf)return;
   refreshing=true;
   try{if(S.screen==='bookings')await loadBookings();else if(['home','find','turf'].includes(S.screen)){await Promise.all(TURFS.map(t=>loadAvailability(t.id,S.screen==='home'?0:S.day,true)));}else return;S.apiError='';render(true);}
   catch(error){S.apiError='Live availability could not refresh. Check your connection.';render(true);}finally{refreshing=false;}
@@ -1001,3 +1027,6 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLiv
 
 const ledgerEvents=new EventSource('/api/public/events');
 ledgerEvents.addEventListener('ledger',refreshLive);
+
+render();
+loadVenues();

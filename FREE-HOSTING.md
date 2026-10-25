@@ -6,6 +6,32 @@ https://futly-prototype.pages.dev. The same-origin `/api/*` proxy calls the
 
 ## Architecture
 
+The customer app renders venues independently of guest-session creation and
+booking history. Availability loads after the venue list; repeated requests for
+the same venue/day share one in-flight request. Booking mutations still wait for
+a valid guest session and CSRF token.
+
+`GET /api/public/venues` uses the separate `futly-venues` Edge Function. It reads
+only `deposit_amount` through the backend-only `futly_public_venue_settings` RPC
+and shares public venue metadata with the main API. This entrypoint imports no
+SQLite engine or full-ledger workspace. Other routes retain `futly-api` and the
+existing ledger rules. Deploy both functions after `build:edge`.
+
+The 25 October 2026 release applied the SQL in
+`supabase/migrations/20261025110933_fast_public_venues.sql` through the connected
+SQL tool. The Git deployment now reapplies that idempotent function definition
+and records its migration in the same transaction. No existing tables or data
+are changed by this migration.
+The RPC denies `anon` and `authenticated` execution and retains trusted-backend
+token validation. Fresh live endpoint samples were 963, 723 and 676 ms. A first
+browser navigation showed its turf card after roughly 3 seconds including page
+startup; session/history continued independently. These are desktop-browser and
+HTTP measurements, not physical-phone acceptance results.
+
+This release passed 55 regression tests and all 10 hosted workflow checks,
+including synthetic unpaid confirmation, staff visibility and cancellation.
+Production deployment: `ee44a20f-049c-44cf-a1e3-97cfd44f3bf8`.
+
 The API shares the local Node server's domain rules and HTTP routes. Supabase's
 hosted runtime does not implement `node:sqlite`, so its request-scoped in-memory
 workspace uses pinned sql.js 1.13.0. Hosted mode persists no SQLite file. Existing
@@ -61,39 +87,46 @@ node --env-file=.env.supabase.local --env-file=.env.supabase-test.local scripts/
 
 ## GitHub pipeline
 
-`prototype-check.yml` runs syntax/regression and portable-engine checks and builds
-the deployment. `prototype-deploy.yml` deploys the backend first, then the
-frontend, from `codex/free-cloudflare-supabase-prototype`. Automatic deployment
-is enabled with `FUTLY_DEPLOY_ENABLED=true` and these encrypted repository secrets:
+Production releases start with a commit and push to
+`codex/free-cloudflare-supabase-prototype` in `kanishqajit/turf-erp`:
 
-The first pushed branch passed GitHub's Prototype checks workflow. The deploy
-workflow correctly skipped while its credential guard was disabled.
+```sh
+git push origin codex/free-cloudflare-supabase-prototype
+```
 
-* `SUPABASE_ACCESS_TOKEN`: deployment access for the Futly project.
-* `CLOUDFLARE_API_TOKEN`: Pages deployment permission for the Cloudflare account.
+`prototype-check.yml` verifies pull requests and pushes. `prototype-deploy.yml`
+runs automatically on production-branch pushes with `FUTLY_DEPLOY_ENABLED=true`:
 
-The Supabase token is scoped to Futly, with Edge Functions read-write and project
-settings read, and expires 90 days after creation on 13 October 2026. Rotate it
-in GitHub before expiry to keep deployments working. The Cloudflare token grants
-only Pages edit on the hosting account and currently has no expiry.
+1. Install the locked dependencies and run syntax, regression and portable tests.
+2. Build the shared Edge runtime with the pushed commit SHA.
+3. Apply pending SQL files from `supabase/migrations/` using the Supabase
+   Management API and the existing CI token. Schema changes and migration history
+   are committed together under a database advisory lock. Applied SQL must match
+   Git exactly; missing or edited historical migrations stop deployment.
+4. Deploy `futly-api` and `futly-venues` to Supabase.
+5. Build and deploy the tracked frontend assets and API proxy to Cloudflare Pages.
+6. Verify `/release.json`, the customer JavaScript, and both backend functions
+   match the pushed SHA. A release is complete only when these checks pass.
+
+The encrypted GitHub secrets are `SUPABASE_ACCESS_TOKEN` (Futly function deployment
+and database-query access) and `CLOUDFLARE_API_TOKEN` (Pages write access).
+The existing `prototype` GitHub environment is used. CI logs identify the release
+commit and failed step; no database password is needed by this pipeline.
+
+Historical migration filenames now use the versions already recorded remotely.
+Their complete SQL contents were compared with the stored migration statements
+before renaming; no historical SQL was changed. New migrations should be created
+with `supabase migration new`, tested, committed, and released through the same
+push workflow. Transactional migrations are required by the migration runner.
 
 Cloudflare production bindings contain `TURF_SUPABASE_URL` and encrypted
 `TURF_SUPABASE_SERVER_TOKEN`. Preview environments do not receive the live token.
-The public backend URL is declared in Wrangler's production configuration so
-subsequent CLI deployments retain it; the encrypted token stays in Cloudflare.
-The workflow verifies public API health after publishing.
-The workflow uses the provisioned database and does not automatically reapply
-schema migrations. Current remote migration history is:
+The public backend URL is retained in `wrangler.jsonc`.
 
-| Remote version | Local source |
-| --- | --- |
-| 20261009110515 | 20261008140531_futly_shared_ledger.sql |
-| 20261009110643 | 20261009110622_restrict_auto_rls_function.sql |
-| 20261013125005 | 20261013124920_edge_api_rate_limits.sql |
-
-Reconcile these imported version identifiers before enabling automatic schema
-deployment. Apply future schema changes separately and verify them before
-publishing a dependent API version.
+Direct deployment commands, connector uploads and direct production SQL are not
+the normal release path. Make changes in Git and wait for the deployment workflow
+and its live checks. The manual workflow trigger is available for a retry of a
+committed revision.
 
 ## Prototype limits
 

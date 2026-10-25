@@ -4,16 +4,11 @@ import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-export const PITCHES = [
-  { name:'Pitch A', rate:1800 },
-  { name:'Pitch B', rate:1200 },
-  { name:'Main Ground', rate:3200 },
-];
-export const OPEN_MIN = 6 * 60;
+import { PITCHES, OPEN_MIN, CLOSE_MIN } from './venue.mjs';
+export { PITCHES, OPEN_MIN, CLOSE_MIN } from './venue.mjs';
 /* Trading hours. This is the one the API enforces — client/constants.js and
    mobile.js draw boards from their own copies, so all three move together or
    the board offers an hour that createBookings() then rejects. */
-export const CLOSE_MIN = 24 * 60;
 const ROLES = { operator:1, manager:2, owner:3 };
 
 export class ProductError extends Error {

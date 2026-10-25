@@ -8,6 +8,7 @@ const output=join(root,'dist');
 const files=['index.html','app.js','styles.css','mobile.html','mobile.js','mobile.css','manifest.webmanifest'];
 await rm(output,{recursive:true,force:true});
 await mkdir(join(output,'book'),{recursive:true});
+await writeFile(join(output,'release.json'),JSON.stringify({commit:process.env.GITHUB_SHA || 'local'})+'\n');
 for(const file of files)await cp(join(root,file),join(output,file));
 for(const directory of ['client','icons'])await cp(join(root,directory),join(output,directory),{recursive:true});
 for(const file of ['index.html','app.js','art.js','styles.css'])await cp(join(root,'customer',file),join(output,'book',file));

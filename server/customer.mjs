@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { PITCHES, OPEN_MIN, CLOSE_MIN, ProductError } from './store.mjs';
+import { ProductError } from './store.mjs';
+import { publicVenue } from './venue.mjs';
 
 const fail = (status, code, message) => { throw new ProductError(status, code, message); };
 const hash = value => createHash('sha256').update(String(value)).digest('hex');
@@ -14,15 +15,9 @@ export function createCustomerApi(store, env = process.env, now = () => Date.now
     hold_id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES customer_sessions(id),
     request_key TEXT NOT NULL, request_json TEXT NOT NULL, booking_id TEXT REFERENCES bookings(id),
     UNIQUE(session_id,request_key));`);
-  const slug = env.TURF_VENUE_SLUG || 'futly-demo';
-  const venue = { slug, name:env.TURF_VENUE_NAME || 'Futly Demo Arena',
-    location:env.TURF_VENUE_LOCATION || 'Koramangala, Bengaluru',
-    phone:env.TURF_VENUE_PHONE || '', demo:true,
-    amenities:['Floodlights'], timeZone:env.TURF_TIME_ZONE || 'Asia/Kolkata' };
-  const resources = PITCHES.map((pitch,id)=>({ id, ...pitch, sub:['7-a-side','5-a-side','11-a-side'][id] }));
-  const settings = () => ({ openMinute:OPEN_MIN, closeMinute:CLOSE_MIN,
-    minimumMinutes:60, stepMinutes:30, floodlightAfter:1080, floodlightFee:300,
-    depositAmount:store.getSettings().depositAmount });
+  const {resources,settings:initialSettings,...venue}=publicVenue(500,env);
+  const slug=venue.slug;
+  const settings = () => ({...initialSettings,depositAmount:store.getSettings().depositAmount});
   function actor(){
     if(!db.prepare("SELECT id FROM users WHERE role='owner' AND active=1 LIMIT 1").get())
       fail(503,'venue_not_ready','The venue is not accepting bookings yet.');

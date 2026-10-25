@@ -3,11 +3,22 @@ import { cloudPersistence } from './runtime/cloud-ledger.mjs';
 import { ProductError } from './runtime/store.mjs';
 import { createApi } from './runtime/api-core.mjs';
 import { handleRequest as ledgerRequest } from '../futly-ledger/handler.mjs';
+import { readPublicVenues } from './runtime/public-venues.mjs';
+import { RELEASE } from './runtime/release.mjs';
 
 Deno.serve(async request=>{
   const reply=(status:number,code:string,message:string)=>Response.json({error:{code,message}},{status,headers:{'Cache-Control':'no-store'}});
   const token=request.headers.get('x-futly-server-token')||'';
   if(!/^[A-Za-z0-9_-]{40,150}$/.test(token))return reply(401,'proxy_required','Trusted frontend required.');
+  const origin=request.headers.get('x-futly-public-origin')||'';
+  let publicUrl:URL;
+  try{publicUrl=new URL(origin);if(publicUrl.protocol!=='https:'||publicUrl.origin!==origin)throw new Error();}
+  catch{return reply(400,'invalid_origin','Public origin is invalid.');}
+  const path=new URL(request.url).pathname.replace(/^\/futly-api(?=\/)/,'');
+  if(!path.startsWith('/api/'))return reply(404,'not_found','API route not found.');
+  if(request.method==='GET'&&path==='/api/public/venues'){
+    const response=await readPublicVenues(token,Deno.env);response.headers.set('X-Futly-Commit',RELEASE);return response;
+  }
   const rpc=async(action:string,payload={})=>ledgerRequest(new Request('https://internal/ledger',{
     method:'POST',headers:{'Content-Type':'application/json','X-Futly-Server-Token':token},body:JSON.stringify({action,...payload}),
   }),Deno.env);
@@ -29,12 +40,6 @@ Deno.serve(async request=>{
       throw new ProductError(503,'cloud_unavailable','Change could not be confirmed. Retry shortly.');
     },
   };
-  const origin=request.headers.get('x-futly-public-origin')||'';
-  let publicUrl:URL;
-  try{publicUrl=new URL(origin);if(publicUrl.protocol!=='https:'||publicUrl.origin!==origin)throw new Error();}
-  catch{return reply(400,'invalid_origin','Public origin is invalid.');}
-  const path=new URL(request.url).pathname.replace(/^\/futly-api(?=\/)/,'');
-  if(!path.startsWith('/api/'))return reply(404,'not_found','API route not found.');
   // Cloud instances do not share an in-memory connection list. Clients use
   // their existing periodic refresh until a durable event channel is added.
   if(path==='/api/public/events')return new Response(null,{status:204,headers:{'Cache-Control':'no-store'}});
@@ -79,6 +84,7 @@ Deno.serve(async request=>{
       return {status,body,headers:responseHeaders};
     });
     output.headers.delete('Content-Length');
+    output.headers.set('X-Futly-Commit',RELEASE);
     return new Response(request.method==='HEAD'?null:output.body,{status:output.status,headers:output.headers});
   }catch(error){
     const status=error instanceof ProductError?error.status:500;

@@ -11,12 +11,13 @@ const env={TURF_BOOTSTRAP_EMAIL:'cloud@turf.test',TURF_BOOTSTRAP_PASSWORD:'cloud
 const sha=s=>createHash('sha256').update(s).digest('hex');
 const {store:template}=workspace();
 const empty=Object.fromEntries(Object.keys(exportState(template)).map(key=>[key,[]]));template.close();
-const sql=readFileSync(new URL('../supabase/migrations/20261008140531_futly_shared_ledger.sql',import.meta.url),'utf8');
+const sql=readFileSync(new URL('../supabase/migrations/20261009110515_futly_shared_ledger.sql',import.meta.url),'utf8');
 
 test('Supabase relational ledger protects and persists the complete venue workflow',async t=>{
   const pg=new PGlite();
   await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;');
   await pg.exec(sql);
+  await pg.exec(readFileSync(new URL('../supabase/migrations/20261025110933_fast_public_venues.sql',import.meta.url),'utf8'));
   await pg.query('UPDATE futly.ledger_meta SET integration_token_hash=$1 WHERE id=1',[sha(token)]);
   const transport={
     read:async()=> (await pg.query('SELECT public.futly_ledger_read($1) AS data',[token])).rows[0].data,
@@ -25,6 +26,13 @@ test('Supabase relational ledger protects and persists the complete venue workfl
   const ledger=cloudPersistence(transport,env);
   let owner,booking,customer,hold;
   try{
+    await t.test('public venue settings are scoped and require trusted backend credentials',async()=>{
+      await assert.rejects(pg.query('SELECT public.futly_public_venue_settings($1)',['invalid']),/Server authentication required/);
+      const data=(await pg.query('SELECT public.futly_public_venue_settings($1) AS data',[token])).rows[0].data;
+      assert.deepEqual(data,{depositAmount:500});
+      const permissions=await pg.query("SELECT has_function_privilege('anon','public.futly_public_venue_settings(text)','EXECUTE') AS anon, has_function_privilege('authenticated','public.futly_public_venue_settings(text)','EXECUTE') AS authenticated");
+      assert.deepEqual(permissions.rows[0],{anon:false,authenticated:false});
+    });
     await t.test('bootstrap persists owner in private Postgres records',async()=>{
       await ledger.run(()=>ledger.store.bootstrapFromEnv(env));
       owner=await ledger.run(()=>ledger.store.authenticate(env.TURF_BOOTSTRAP_EMAIL,env.TURF_BOOTSTRAP_PASSWORD));

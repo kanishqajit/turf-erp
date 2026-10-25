@@ -65,7 +65,7 @@ at port 4173; `.env.connected` points its public-only proxy to port 5195.
 1. Create the dedicated Futly project in the chosen Supabase organization after
    reviewing and confirming its quoted cost. Mumbai (`ap-south-1`) is appropriate
    for the current India demonstration.
-2. Apply `supabase/migrations/20261008140531_futly_shared_ledger.sql` to the empty
+2. Apply `supabase/migrations/20261009110515_futly_shared_ledger.sql` to the empty
    project. The migration creates private, RLS-enabled tables and restricted RPCs.
 3. Generate a private random server token (48 random bytes encoded as base64url).
    Set `futly.ledger_meta.integration_token_hash` to its SHA-256 hexadecimal hash.

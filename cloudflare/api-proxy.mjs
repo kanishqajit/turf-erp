@@ -10,7 +10,8 @@ export async function proxyApi(request,env,fetcher=fetch){
   try{
     target=new URL(env.TURF_SUPABASE_URL);
     if(target.protocol!=='https:'||!target.hostname.endsWith('.supabase.co')||target.pathname!=='/'||target.username||target.password)throw new Error();
-    target.pathname='/functions/v1/futly-api'+url.pathname;target.search=url.search;
+    const functionName=request.method==='GET'&&url.pathname==='/api/public/venues'?'futly-venues':'futly-api';
+    target.pathname='/functions/v1/'+functionName+url.pathname;target.search=url.search;
   }catch{return json(503,'backend_unconfigured','Shared service is not configured.');}
   const headers=new Headers();
   for(const name of ['cookie','content-type','x-csrf-token','origin']){

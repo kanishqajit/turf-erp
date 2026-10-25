@@ -3,6 +3,14 @@ import assert from 'node:assert/strict';
 import {proxyApi} from '../cloudflare/api-proxy.mjs';
 const env={TURF_SUPABASE_URL:'https://example.supabase.co',TURF_SUPABASE_SERVER_TOKEN:'private-server-secret'};
 
+test('venue listing uses the small function while availability retains ledger checks',async()=>{
+  for(const [path,name] of [['/api/public/venues','futly-venues'],['/api/public/venues/futly-demo/availability','futly-api']]){
+    await proxyApi(new Request('https://futly.pages.dev'+path),env,async url=>{
+      assert.equal(url.pathname,'/functions/v1/'+name+path);return Response.json({});
+    });
+  }
+});
+
 test('proxy rejects a cross-origin mutation without contacting the backend',async()=>{
   const response=await proxyApi(new Request('https://futly.pages.dev/api/bookings',{method:'POST',headers:{Origin:'https://attacker.test'}}),env,()=>{throw new Error('must not call');});
   assert.equal(response.status,403);

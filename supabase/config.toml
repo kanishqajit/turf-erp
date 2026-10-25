@@ -7,3 +7,7 @@ verify_jwt = false
 [functions.futly-api]
 # The private ledger verifies the frontend token before any application route.
 verify_jwt = false
+
+[functions.futly-venues]
+# The scoped database function authenticates the trusted frontend token.
+verify_jwt = false
