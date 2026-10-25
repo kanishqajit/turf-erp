@@ -1,11 +1,11 @@
 # Release workflow
 
 The user requires production releases through Git. Commit the requested changes
-and push to `codex/free-cloudflare-supabase-prototype`; GitHub Actions deploys
-Supabase functions and Cloudflare Pages. Database migrations are prepared but
-remain gated by `FUTLY_DATABASE_MIGRATIONS_ENABLED` until the CI token receives
-database permissions. Do not introduce a database-dependent release while that
-gate is off unless its migration has been explicitly handled with the user.
+and push to `codex/free-cloudflare-supabase-prototype`; GitHub Actions applies
+database migrations, deploys Supabase functions and deploys Cloudflare Pages.
+`FUTLY_DATABASE_MIGRATIONS_ENABLED=true` enables the database step using the
+Futly-scoped CI token. Keep this gate enabled for database-dependent releases;
+if it is disabled, handle the migration explicitly with the user first.
 Wait for the deployment workflow and its live commit checks before reporting
 that the release is complete.
 
