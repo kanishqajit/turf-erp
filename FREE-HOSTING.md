@@ -19,9 +19,10 @@ existing ledger rules. Deploy both functions after `build:edge`.
 
 The 25 October 2026 release applied the SQL in
 `supabase/migrations/20261025110933_fast_public_venues.sql` through the connected
-SQL tool. The Git deployment now reapplies that idempotent function definition
-and records its migration in the same transaction. No existing tables or data
-are changed by this migration.
+SQL tool. The prepared migration runner can reapply that idempotent function
+definition and record its migration in the same transaction once the database
+deployment gate is enabled. No existing tables or data are changed by this
+migration.
 The RPC denies `anon` and `authenticated` execution and retains trusted-backend
 token validation. Fresh live endpoint samples were 963, 723 and 676 ms. A first
 browser navigation showed its turf card after roughly 3 seconds including page
@@ -99,7 +100,7 @@ runs automatically on production-branch pushes with `FUTLY_DEPLOY_ENABLED=true`:
 
 1. Install the locked dependencies and run syntax, regression and portable tests.
 2. Build the shared Edge runtime with the pushed commit SHA.
-3. Apply pending SQL files from `supabase/migrations/` using the Supabase
+3. When `FUTLY_DATABASE_MIGRATIONS_ENABLED=true`, apply pending SQL files from `supabase/migrations/` using the Supabase
    Management API and the existing CI token. Schema changes and migration history
    are committed together under a database advisory lock. Applied SQL must match
    Git exactly; missing or edited historical migrations stop deployment.
@@ -108,10 +109,19 @@ runs automatically on production-branch pushes with `FUTLY_DEPLOY_ENABLED=true`:
 6. Verify `/release.json`, the customer JavaScript, and both backend functions
    match the pushed SHA. A release is complete only when these checks pass.
 
-The encrypted GitHub secrets are `SUPABASE_ACCESS_TOKEN` (Futly function deployment
-and database-query access) and `CLOUDFLARE_API_TOKEN` (Pages write access).
+The encrypted GitHub secrets are `SUPABASE_ACCESS_TOKEN` (Futly function deployment)
+and `CLOUDFLARE_API_TOKEN` (Pages write access).
 The existing `prototype` GitHub environment is used. CI logs identify the release
 commit and failed step; no database password is needed by this pipeline.
+
+Automatic SQL migrations remain disabled: the existing Supabase token returns
+403 for database queries (`database_read` permission is missing). Before enabling
+`FUTLY_DATABASE_MIGRATIONS_ENABLED=true`, grant that Futly-scoped CI token database
+read/write permission and update its GitHub secret if required. Browser access
+to make that credential change was not granted in the setup session. App and
+function deployments do not require this additional permission and remain
+automatic. Database-dependent changes must wait for this setup or an explicit
+user-approved migration path.
 
 Historical migration filenames now use the versions already recorded remotely.
 Their complete SQL contents were compared with the stored migration statements

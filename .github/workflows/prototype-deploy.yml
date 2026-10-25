@@ -39,6 +39,7 @@ jobs:
           test -n "$SUPABASE_ACCESS_TOKEN"
           test -n "$CLOUDFLARE_API_TOKEN"
       - name: Apply database migrations from Git
+        if: vars.FUTLY_DATABASE_MIGRATIONS_ENABLED == 'true'
         run: node scripts/deploy-migrations.mjs
       - name: Deploy backend first
         run: npx supabase functions deploy futly-api futly-venues --project-ref "$SUPABASE_PROJECT_ID" --use-api
