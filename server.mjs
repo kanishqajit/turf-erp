@@ -24,7 +24,7 @@ const customerApi=persistence.customer;
 const CUSTOMER_COOKIE = 'futly_customer';
 const CUSTOMER_ROOT = process.env.TURF_CUSTOMER_APP_DIR || join(ROOT,'..','Turf-app');
 const customerFiles = new Map([['/book/','index.html'],['/book/index.html','index.html'],
-  ['/book/app.js','app.js'],['/book/art.js','art.js'],['/book/styles.css','styles.css']]);
+  ['/book/privacy.html','privacy.html'],['/book/app.js','app.js'],['/book/art.js','art.js'],['/book/styles.css','styles.css']]);
 
 const clientModules = [
   'actions.js', 'api.js', 'constants.js', 'datetime.js', 'domain.js', 'modals.js', 'render.js', 'state.js',

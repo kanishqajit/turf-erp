@@ -524,3 +524,5 @@ button:disabled{cursor:wait;opacity:.6}
 .google-signin{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:48px;margin-top:24px;padding:12px 18px;border:1px solid #747775;border-radius:24px;background:#fff;color:#1f1f1f;font:600 15px var(--sans)}
 .google-signin svg{flex:none}.google-signin:hover{background:#f8fafd}.google-signin:focus-visible{outline:3px solid var(--lime-txt2);outline-offset:3px}
 .auth-or{text-align:center;margin:18px 0 -6px;font:500 12px var(--sans);color:var(--muted2)}
+
+.privacy-link{margin:24px 0 8px;font-size:12px;color:var(--muted,#656963);text-align:center}.privacy-link a{color:inherit;text-underline-offset:3px}

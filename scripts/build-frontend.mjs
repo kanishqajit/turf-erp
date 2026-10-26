@@ -11,7 +11,7 @@ await mkdir(join(output,'book'),{recursive:true});
 await writeFile(join(output,'release.json'),JSON.stringify({commit:process.env.GITHUB_SHA || 'local'})+'\n');
 for(const file of files)await cp(join(root,file),join(output,file));
 for(const directory of ['client','icons'])await cp(join(root,directory),join(output,directory),{recursive:true});
-for(const file of ['index.html','app.js','art.js','styles.css'])await cp(join(root,'customer',file),join(output,'book',file));
+for(const file of ['index.html','app.js','art.js','styles.css','privacy.html'])await cp(join(root,'customer',file),join(output,'book',file));
 await writeFile(join(output,'_redirects'),'/m /mobile.html 200\n/book /book/ 301\n');
 await writeFile(join(output,'_routes.json'),JSON.stringify({version:1,include:['/api/*'],exclude:[]},null,2)+'\n');
 await writeFile(join(output,'_headers'),`/*

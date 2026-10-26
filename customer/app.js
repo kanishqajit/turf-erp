@@ -302,6 +302,7 @@ function screenHome(){
     </div>
 
     <div id="turfList">${S.loadingVenues ? `<div class="noslots"><b>Loading live venues…</b><span class="t-sub">Checking Futly availability.</span></div>` : turfListHtml()}</div>
+    <p class="privacy-link"><a href="/book/privacy.html">Privacy notice</a></p>
 
   </div>`;
 }
@@ -821,6 +822,7 @@ function screenProfile(){
       ${!recover?`<label class="booking-field"><span>Password${signup||password?' · at least 10 characters':''}</span><input name="password" type="password" autocomplete="${signup||password?'new-password':'current-password'}" minlength="${signup||password?10:1}" maxlength="128" required></label>`:''}
       ${message}${error}<button class="bigcta" type="submit" ${S.authBusy?'disabled':''}>${S.authBusy?'Please wait…':label}</button>
     </form>
+    <p class="privacy-link"><a href="/book/privacy.html">Privacy notice</a></p>
     ${!password?`<div class="auth-actions"><button class="chip" data-act="auth-mode" data-v="${signup||recover?'login':'signup'}">${signup||recover?'Already have an account? Sign in':'New here? Create an account'}</button>${!recover&&!signup?'<button class="chip" data-act="auth-mode" data-v="recover">Forgot password?</button>':''}${back}</div>`:''}
   </div>`;
 }
