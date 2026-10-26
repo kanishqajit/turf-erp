@@ -9,7 +9,7 @@ function fixture(){
   const owner=store.createUser({email:'owner@test.example',name:'Owner',role:'owner',password:'prototype owner password'});
   const api=createCustomerApi(store,{},()=>clock);
   const a=api.createSession(),b=api.createSession();
-  const customer=api.session(a.token),other=api.session(b.token);
+  const customer={...api.session(a.token),profileId:'profile-a'},other={...api.session(b.token),profileId:'profile-b'};
   const input={date:'2026-10-09',pitch:0,start:1080,end:1140,team:'Customer FC',contact:'9000000001',idempotencyKey:'request-0001'};
   return {store,owner,api,customer,other,input,advance:ms=>{clock+=ms}};
 }
@@ -87,4 +87,33 @@ test('customer history reflects staff collections; unpaid future cancellation fr
     assert.ok(!api.availability(input.date).unavailable.some(b=>b.resourceId===1));
     assert.equal(api.cancel(customer,free.id).booking.status,'cancelled');
   }finally{store.close()}
+});
+
+test('account ownership follows the customer across browsers and survives sign-out safely',()=>{
+  const {store,api,customer,other,input}=fixture();
+  try{
+    const guest={...customer};delete guest.profileId;
+    code('customer_login_required',()=>api.createHold(guest,input));
+    const {hold}=api.createHold(customer,input),{booking}=api.confirmHold(customer,hold.id);
+    const fresh=api.session(api.createSession().token);
+    assert.equal(api.bookings({...fresh,profileId:customer.profileId})[0].id,booking.id);
+    assert.equal(api.bookings(guest).length,0);
+    code('not_found',()=>api.cancel(guest,booking.id));
+    code('not_found',()=>api.confirmHold(other,hold.id));
+    api.claim(guest,other.profileId);
+    assert.equal(api.bookings(other).length,0,'an account cannot re-claim another account booking');
+    assert.equal(api.cancel({...fresh,profileId:customer.profileId},booking.id).booking.status,'cancelled');
+  }finally{store.close();}
+});
+test('sign-in claims only unowned bookings from the current browser',()=>{
+  const {store,api,customer,other,input}=fixture();
+  try{
+    const {hold}=api.createHold(customer,input),{booking}=api.confirmHold(customer,hold.id);
+    store.db.prepare('UPDATE customer_reservations SET profile_id=NULL WHERE hold_id=?').run(hold.id);
+    api.claim(other,other.profileId);
+    assert.equal(api.bookings(other).length,0);
+    api.claim(customer,customer.profileId);
+    assert.equal(api.bookings(customer)[0].id,booking.id);
+    assert.equal(api.bookings({...customer,profileId:undefined}).length,0);
+  }finally{store.close();}
 });

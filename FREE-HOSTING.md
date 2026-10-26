@@ -141,3 +141,35 @@ to a browser cookie. Payment records do not charge a payment gateway. This is
 one demo venue. Full-ledger snapshots suit the prototype; replace them with
 scoped PostgreSQL transactions before scaling to busy venues. Physical-phone
 acceptance and production backup/monitoring remain launch work.
+
+### Customer accounts
+
+The customer app uses Supabase Auth email/password accounts, separate from staff
+console accounts. Browsing stays public; confirming a new booking requires
+customer sign-in. Reservations carry the verified Auth user ID in the private
+`futly.customer_reservations.profile_id` column. Signing in claims only unowned
+legacy reservations belonging to that browser. Account-owned bookings never
+become browser-owned again after sign-out, and matching contact details do not
+grant ownership.
+
+The API verifies identities with Supabase Auth, keeps access/refresh tokens in
+HttpOnly secure cookies and uses the existing same-origin CSRF protection.
+Cloud Edge Functions use their built-in `SUPABASE_URL` / `SUPABASE_ANON_KEY`;
+local development uses `TURF_SUPABASE_URL` / `TURF_SUPABASE_PUBLISHABLE_KEY`.
+No Auth service-role key is needed for customer sign-in.
+
+Before enabling public signup, configure the project's email provider and Auth
+URL settings. The production Site URL should be
+`https://futly-prototype.pages.dev/book/`; allow the two exact callback URLs
+`https://futly-prototype.pages.dev/book/?auth=confirmed` and
+`https://futly-prototype.pages.dev/book/?auth=recovery` (and your local callback
+URLs for development). Signup confirmations and password recovery use PKCE.
+Open a recovery link in the same browser where it was requested. Confirming an
+email on another browser also permits normal password sign-in afterwards.
+Supabase's built-in mail service is restricted; configure custom SMTP for public
+verification and password-reset emails. Keep any SMTP credentials out of Git.
+
+After the Git-driven migration/function/frontend deployment succeeds, verify
+sign-up/sign-in, booking creation, a second browser sign-in with the same account,
+and sign-out. Another customer must not see or cancel the first customer's
+booking. Staff bookings and accounts keep their existing authentication flow.

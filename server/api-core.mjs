@@ -1,7 +1,8 @@
 import { Buffer } from 'node:buffer';
+import { createCustomerAuth, AUTH_COOKIE } from './customer-auth.mjs';
 import { ProductError } from './store.mjs';
 
-export function createApi(persistence,env={}){
+export function createApi(persistence,env={},customerAuth=createCustomerAuth(env)){
 const store=persistence.store,customerApi=persistence.customer;
 const SESSION_COOKIE='turf_session',CUSTOMER_COOKIE='futly_customer';
 const loginAttempts = new Map();
@@ -113,8 +114,8 @@ function recentAttempts(key, windowMs){
   return attempts;
 }
 
-function checkLoginLimit(req,email){
-  const ipKey=`ip:${requestIp(req)}`, accountKey=`account:${String(email || '').trim().toLowerCase()}`;
+function checkLoginLimit(req,email,prefix='staff'){
+  const ipKey=`${prefix}-ip:${requestIp(req)}`, accountKey=`${prefix}-account:${String(email || '').trim().toLowerCase()}`;
   if (recentAttempts(ipKey,15*60*1000).length >= 20 || recentAttempts(accountKey,15*60*1000).length >= 5)
     throw new ProductError(429, 'login_rate_limited', 'Too many failed sign-in attempts. Try again in 15 minutes.');
   return { ipKey,accountKey };
@@ -132,13 +133,17 @@ function rateLimitMutation(row){
 async function api(req, res, url){
   const path = url.pathname;
   if (path.startsWith('/api/public/')){
+    const cookies=parseCookies(req);
+    const resolveAuth=()=>req.customerAuthPromise ||= customerAuth.session(cookies[AUTH_COOKIE]);
     if(req.method==='GET'&&path==='/api/public/session'){
+      const auth=await resolveAuth();
+      if(auth.cookie)res.setHeader('Set-Cookie',auth.cookie);
       const existing=customerApi.session(parseCookies(req)[CUSTOMER_COOKIE]);
-      if(existing)return json(res,200,{csrfToken:existing.csrf,guest:true});
+      if(existing)return json(res,200,{csrfToken:existing.csrf,guest:!auth.user,user:auth.user,expired:!!auth.expired});
       rateLimitMutation({session_id:'public-session:'+requestIp(req)});
       const session=customerApi.createSession();
-      return json(res,200,{csrfToken:session.csrf,guest:true},{'Set-Cookie':
-        `${CUSTOMER_COOKIE}=${session.token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000${env.NODE_ENV==='production'?'; Secure':''}`});
+      return json(res,200,{csrfToken:session.csrf,guest:!auth.user,user:auth.user,expired:!!auth.expired},{'Set-Cookie':[
+        `${CUSTOMER_COOKIE}=${session.token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000${env.NODE_ENV==='production'?'; Secure':''}`, ...[auth.cookie].flat().filter(Boolean)]});
     }
     if(req.method==='GET'&&path==='/api/public/venues')return json(res,200,{venues:[{...customerApi.venue,resources:customerApi.resources,settings:customerApi.settings()}]});
     const customer=customerApi.session(parseCookies(req)[CUSTOMER_COOKIE]);
@@ -153,7 +158,22 @@ async function api(req, res, url){
       rateLimitMutation({session_id:'customer:'+customer.id});
       rateLimitMutation({session_id:'public-ip:'+requestIp(req)});
     }
-    if(req.method==='GET'&&path==='/api/public/bookings')return json(res,200,{bookings:customerApi.bookings(customer)});
+    if(req.method==='POST'&&(match=path.match(/^\/api\/public\/auth\/(login|signup|logout|recover|exchange|password)$/))){
+      const body=await readJson(req);
+      const keys=['login','signup','recover'].includes(match[1])?checkLoginLimit(req,body.email,'customer'):null;
+      // External Auth operations run once even if the optimistic ledger commit retries.
+      if(!req.customerAuthAction)req.customerAuthAction=customerAuth.action(match[1],body,cookies,url.origin);
+      let result;
+      try{result=await req.customerAuthAction;}catch(error){if(keys)recordLoginFailure(keys);throw error;}
+      if(keys)clearLoginFailures(keys);
+      if(result.user)customerApi.claim(customer,result.user.id);
+      return json(res,200,{user:result.user,confirmationRequired:!!result.confirmationRequired,recovery:!!result.recovery},
+        result.cookie?{'Set-Cookie':result.cookie}:{});
+    }
+    const auth=await resolveAuth();
+    if(auth.cookie)res.setHeader('Set-Cookie',auth.cookie);
+    if(auth.user)customer.profileId=auth.user.id;
+    if(req.method==='GET'&&path==='/api/public/bookings')return json(res,200,{bookings:customerApi.bookings(customer),user:auth.user});
     if((match=path.match(/^\/api\/public\/bookings\/([^/]+)\/cancel$/))&&req.method==='POST')
       return json(res,200,customerApi.cancel(customer,match[1]));
     if((match=path.match(/^\/api\/public\/venues\/([^/]+)\/holds(?:\/([^/]+)\/confirm)?$/))&&req.method==='POST'){

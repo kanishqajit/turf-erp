@@ -514,3 +514,10 @@ h1,h2,h3{font-weight:inherit}
 .nav[hidden]{display:none}
 .nb{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;color:#8B9199;transition:.13s}
 .nb.on{background:#fff;color:var(--ink)}
+
+.auth-form{display:grid;gap:18px;margin-top:22px}
+.auth-form .booking-field input{width:100%;min-width:0;font-size:16px}
+.auth-actions{display:flex;flex-wrap:wrap;gap:12px;margin:22px 0 90px}
+.auth-message{padding:14px;border-radius:14px;background:var(--lime-pale);color:var(--lime-txt2);font:600 14px/1.5 var(--sans);overflow-wrap:anywhere}
+.prof .who{min-width:0}.prof .who p{overflow-wrap:anywhere}
+button:disabled{cursor:wait;opacity:.6}

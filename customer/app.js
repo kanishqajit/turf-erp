@@ -50,6 +50,7 @@ function isTaken(turfId, court, day, block){
 const S = {
   screen:'home', fmt:'all', turfId:'', court:'', day:0, start:null, dur:60,
   pay:'venue', tab:'about', bookTab:'upcoming', split:[], code:'',
+  user:null,authMode:'login',authBusy:false,authEmail:'',authError:'',authMessage:'',authReturn:'',recovery:false,
   userName:'player', searching:false, q:'', csrf:'', bookings:[], requestKey:null, holdId:null, cancelAsk:null, notice:'',
   from:18*60, to:22*60,           // "Free between…" window, defaults 6 PM → 10 PM
   availability:{}, loadingVenues:true, loadingAvailability:false, loadingBookings:true, bookingsError:'', apiError:'',
@@ -146,7 +147,7 @@ async function api(path,{ method='GET',body }={}){
 let sessionRequest=null;
 function ensureSession(){
   if(S.csrf)return Promise.resolve();
-  if(!sessionRequest)sessionRequest=api('/api/public/session').then(data=>{S.csrf=data.csrfToken;})
+  if(!sessionRequest)sessionRequest=api('/api/public/session').then(data=>{S.csrf=data.csrfToken;applyProfile(data.user);})
     .finally(()=>{sessionRequest=null;});
   return sessionRequest;
 }
@@ -260,7 +261,7 @@ function screenHome(){
 
   return `<div class="pad">
     <div class="hdr-row">
-      <span class="avatar hdr-av">${S.userName[0].toUpperCase()}</span>
+      <button class="avatar hdr-av" data-act="go" data-v="profile" aria-label="Your profile">${esc(S.userName[0].toUpperCase())}</button>
       <span class="hdr-who">
         <b>Hi, ${esc(S.userName)}</b>
         <span class="hdr-loc">${ic('pin',11,2)} ${esc(TURFS[0]?.area || 'Choose your venue')}</span>
@@ -596,6 +597,7 @@ function screenCheckout(){
       </div>
     </div>
 
+    <div class="auth-message" style="margin-top:16px">${S.user?`Booking as ${esc(S.user.email)}`:'Sign in at the next step to save this booking to your profile.'}</div>
     <h3 class="t-sec" style="margin:22px 0 10px">Booking details</h3>
     <div class="card" style="display:grid;gap:12px">
       <label class="booking-field"><span>Name or team</span><input id="customer-name" value="${esc(S.customerName)}" placeholder="e.g. Kanishq or Kozhikode FC" maxlength="120" autocomplete="name"></label>
@@ -681,8 +683,9 @@ function screenDone(){
 /* ─── bookings ────────────────────────────────────────── */
 function screenBookings(){
   return `<div class="pad"><h1 class="t-title">My bookings</h1>
-    <p class="t-sub" style="margin:4px 0 20px">Saved for this browser. Staff updates and payments appear here.</p>
+    <p class="t-sub" style="margin:4px 0 20px">${S.user?'Linked to your profile. Staff updates and payments appear here.':'Sign in to keep your bookings across devices. Existing browser bookings appear below.'}</p>
     ${S.apiError?`<p class="booking-error" role="alert">${esc(S.apiError)}</p>`:''}
+    ${!S.user?'<button class="bigcta" style="margin-bottom:16px" data-act="go" data-v="profile">Sign in or create account</button>':''}
     ${S.bookingsError?`<p class="booking-error" role="alert">${esc(S.bookingsError)}</p>`:''}
     ${!S.bookings.length?(S.loadingBookings?'<div class="noslots"><b>Loading your bookings…</b></div>':S.bookingsError?'':'<div class="noslots"><b>No bookings yet</b><span class="t-sub">Choose a live slot for your first game.</span></div>'):S.bookings.map(b=>{
       const date=new Date(b.date+'T00:00:00');
@@ -795,28 +798,69 @@ function screenWallet(){
 
 /* ─── profile ─────────────────────────────────────────── */
 function screenProfile(){
-  const stats = [['64','GAMES',0],['31','GOALS',1],['4.8','RATING',0]];
-  const sets = [['My squad','Kora FC · 11'],['Payment methods','UPI'],['Notifications','On'],
-                ['Saved turfs','6'],['Help & support','']];
-  return `<div class="pad">
-    <div class="prof">
-      <span class="avatar">${S.userName[0].toUpperCase()}</span>
-      <span class="who">
-        <h1>${esc(S.userName)}</h1>
-        <p>Midfielder · Kora FC · Since 2023</p>
-      </span>
-      <button class="iconbtn">${ic('edit',17,1.8)}</button>
-    </div>
-
-    <div class="stats">
-      ${stats.map(([n,l,fill]) => `<div class="stat ${fill?'fill':''}"><b>${n}</b><small>${l}</small></div>`).join('')}
-    </div>
-
-    <div class="card" style="padding:0 16px">
-      ${sets.map(([l,n]) => `<div class="setrow"><i class="sq"></i>${l}
-        <span class="note">${n}</span><span style="color:#C3C8CD">${ic('chev',16,2)}</span></div>`).join('')}
-    </div>
+  const message=S.authMessage?`<p class="auth-message" role="status">${esc(S.authMessage)}</p>`:'';
+  const error=S.authError?`<p class="booking-error" role="alert">${esc(S.authError)}</p>`:'';
+  const back=S.authReturn?'<button class="chip" data-act="auth-back">Back to booking</button>':'';
+  if(S.user&&!S.recovery)return `<div class="pad">
+    <h1 class="t-title">Your profile</h1><p class="t-sub">Your games, wherever you sign in.</p>
+    <div class="prof"><span class="avatar">${esc(S.userName[0].toUpperCase())}</span><span class="who"><h1>${esc(S.user.name||'Futly player')}</h1><p>${esc(S.user.email)}</p></span></div>
+    <div class="card"><h2 class="t-sec">Bookings that stay with you</h2><p class="t-body">Sign in with this email on any device to see your bookings and the latest payments from the venue.</p>
+    <button class="bigcta" data-act="go" data-v="bookings">My bookings</button></div>${message}${error}
+    <div class="auth-actions">${back}<button class="chip" data-act="auth-mode" data-v="password">Change password</button><button class="chip" data-act="auth-logout" ${S.authBusy?'disabled':''}>${S.authBusy?'Signing out…':'Sign out'}</button></div></div>`;
+  const mode=S.recovery?'password':S.authMode, signup=mode==='signup',recover=mode==='recover',password=mode==='password';
+  const title=password?'Set a new password':recover?'Reset your password':signup?'Create your account':'Welcome back';
+  const label=password?'Save password':recover?'Send reset email':signup?'Create account':'Sign in';
+  return `<div class="pad"><span class="tag">YOUR FUTLY ACCOUNT</span><h1 class="t-title" style="margin-top:14px">${title}</h1>
+    <p class="t-body">${password?'Use at least 10 characters.':recover?'We’ll email a secure reset link. Open it in this browser.':'Keep your bookings together, across every device.'}</p>
+    ${S.loadingBookings&&!S.csrf?'<p class="t-sub">Checking your session…</p>':''}
+    <form id="customer-auth-form" class="card auth-form">
+      ${signup?'<label class="booking-field"><span>Your name</span><input name="name" autocomplete="name" maxlength="120" required></label>':''}
+      ${!password?`<label class="booking-field"><span>Email</span><input name="email" type="email" autocomplete="email" maxlength="254" value="${esc(S.authEmail)}" required></label>`:''}
+      ${!recover?`<label class="booking-field"><span>Password${signup||password?' · at least 10 characters':''}</span><input name="password" type="password" autocomplete="${signup||password?'new-password':'current-password'}" minlength="${signup||password?10:1}" maxlength="128" required></label>`:''}
+      ${message}${error}<button class="bigcta" type="submit" ${S.authBusy?'disabled':''}>${S.authBusy?'Please wait…':label}</button>
+    </form>
+    ${!password?`<div class="auth-actions"><button class="chip" data-act="auth-mode" data-v="${signup||recover?'login':'signup'}">${signup||recover?'Already have an account? Sign in':'New here? Create an account'}</button>${!recover&&!signup?'<button class="chip" data-act="auth-mode" data-v="recover">Forgot password?</button>':''}${back}</div>`:''}
   </div>`;
+}
+
+function applyProfile(user){
+  const previous=S.user?.id||null;
+  S.user=user||null;S.userName=user?.name||user?.email?.split('@')[0]||'player';
+  if(previous!==(user?.id||null)){S.bookings=[];S.latestBooking=null;S.cancelAsk=null;S.requestKey=null;}
+  if(user?.name&&!S.customerName)S.customerName=user.name;
+}
+function openLogin(){S.authReturn='checkout';S.authMode='login';S.authError='';S.screen='profile';render(false);}
+async function submitAuth(form){
+  if(S.authBusy)return;
+  const mode=S.recovery?'password':S.authMode;
+  const body=Object.fromEntries(new FormData(form));
+  S.authEmail=String(body.email||S.authEmail);S.authBusy=true;S.authError='';S.authMessage='';
+  const button=form.querySelector('[type="submit"]');button.disabled=true;button.textContent='Please wait…';
+  try{
+    if(bookingsRequest)await bookingsRequest.catch(()=>{});
+    const data=await api('/api/public/auth/'+mode,{method:'POST',body});applyProfile(data.user);
+    if(data.confirmationRequired){S.authMessage=mode==='recover'?'If this email has an account, a reset link is on its way. Open it in this browser.':'Check your email to confirm your account, then sign in. You can confirm on another device and sign in here.';S.authMode='login';}
+    else if(mode==='password'){S.recovery=false;S.authMode='login';S.authMessage='Password updated.';}
+    else {S.authMessage='You’re signed in.';if(S.authReturn){S.screen=S.authReturn;S.authReturn='';}await loadBookings();}
+  }catch(error){S.authError=error.message;}
+  finally{S.authBusy=false;render(true);}
+}
+async function signOut(){
+  if(S.authBusy)return;S.authBusy=true;S.authError='';render(true);
+  try{if(bookingsRequest)await bookingsRequest.catch(()=>{});await api('/api/public/auth/logout',{method:'POST',body:{}});applyProfile(null);S.customerName='';S.customerPhone='';S.authReturn='';S.recovery=false;S.authMode='login';S.authMessage='You’re signed out.';}
+  catch(error){S.authError=error.message;}finally{S.authBusy=false;render(true);}
+}
+async function finishEmailLink(){
+  const params=new URLSearchParams(location.search),code=params.get('code');
+  if(!code&&!params.get('error')&&!params.get('error_description'))return;
+  // Remove one-use authorization codes from the address bar before other work.
+  history.replaceState(null,'','/book/');S.screen='profile';S.authBusy=true;
+  try{
+    if(!code)throw new Error('The email link has expired. Request a new link.');
+    const data=await api('/api/public/auth/exchange',{method:'POST',body:{code}});
+    applyProfile(data.user);S.recovery=data.recovery;S.authMessage=data.recovery?'Choose your new password.':'Email confirmed. Your account is ready.';
+    await loadBookings();
+  }catch(error){S.authError=error.message;}finally{S.authBusy=false;render(false);}
 }
 
 /* ─── render ──────────────────────────────────────────── */
@@ -824,7 +868,7 @@ const SCREENS = {
   home:screenHome, find:screenFind, turf:screenTurf, checkout:screenCheckout, split:screenSplit,
   done:screenDone, bookings:screenBookings, cups:screenCups, wallet:screenWallet, profile:screenProfile,
 };
-const TABS = ['home','bookings'];
+const TABS = ['home','bookings','profile'];
 
 function render(keepScroll){
   const sc = document.getElementById('scroll');
@@ -840,7 +884,7 @@ function renderNav(){
   const on = TABS.indexOf(S.screen) >= 0;
   nav.hidden = !on;
   if (!on) return;
-  const items = [['home','home'],['bookings','cal']];
+  const items = [['home','home'],['bookings','cal'],['profile','user']];
   nav.innerHTML = items.map(([k,i]) =>
     `<button class="nb ${S.screen===k?'on':''}" data-act="go" data-v="${k}" aria-label="${k}">${ic(i,22,1.8)}</button>`).join('');
 }
@@ -852,7 +896,7 @@ function renderBar(){
   if (S.screen === 'turf' && S.tab === 'courts' && S.start != null)
     cfg = { lbl:`${esc(courtObj()?.n || 'Pitch')} · ${durLabel()} · ${range()}`, amt:money(base()), cta:'Continue', go:'checkout' };
   else if (S.screen === 'checkout')
-    cfg = { lbl:'Pay at venue', amt:money(base()), cta:S.bookingBusy?'Confirming…':'Confirm booking', go:'paynow' };
+    cfg = { lbl:'Pay at venue', amt:money(base()), cta:S.bookingBusy?'Confirming…':S.user?'Confirm booking':'Sign in to book', go:'paynow' };
 
   if (S.screen === 'split'){
     bar.hidden = false;
@@ -870,6 +914,7 @@ function renderBar(){
 }
 
 async function submitBooking(){
+  if(!S.user){openLogin();return;}
   const name=S.customerName.trim(),contact=S.customerPhone.trim(),digits=contact.replace(/\D/g,'');
   if (!name || digits.length<8 || digits.length>15){S.apiError='Enter your name or team and a valid mobile number.';render(true);return;}
   if (!turf() || !courtObj() || S.start==null || S.bookingBusy) return;
@@ -883,14 +928,14 @@ async function submitBooking(){
     S.bookings=[result.booking,...S.bookings.filter(b=>b.id!==result.booking.id)];
     await loadBookings().catch(()=>{S.notice='Booking confirmed. History will refresh when your connection returns.';});
     delete S.availability[availabilityKey(turf().id,S.day)];
-  } catch (error) { S.apiError=error.message;if(['booking_conflict','hold_conflict','hold_expired','past_slot','request_key_reused'].includes(error.code)){S.requestKey=null;delete S.availability[availabilityKey(turf().id,S.day)];} }
+  } catch (error) { S.apiError=error.message;if(error.code==='customer_login_required'){applyProfile(null);openLogin();S.authError=error.message;}if(['booking_conflict','hold_conflict','hold_expired','past_slot','request_key_reused'].includes(error.code)){S.requestKey=null;delete S.availability[availabilityKey(turf().id,S.day)];} }
   finally { S.bookingBusy=false;render(false); }
 }
 
 /* ─── events ──────────────────────────────────────────── */
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
-  if (!el || el.disabled || S.bookingBusy) return;
+  if (!el || el.disabled || S.bookingBusy || S.authBusy) return;
   const a = el.dataset.act, v = el.dataset.v;
   let keep = true;
 
@@ -906,6 +951,9 @@ document.addEventListener('click', e => {
       if(v==='bookings')loadBookings().then(()=>render(true)).catch(error=>{S.apiError=error.message;render(true)});
       keep = false;
       break;
+    case 'auth-mode':S.authMode=v;S.recovery=v==='password';S.authError='';S.authMessage='';break;
+    case 'auth-back':S.screen=S.authReturn||'home';S.authReturn='';break;
+    case 'auth-logout':signOut();return;
     case 'cancel-ask':S.cancelAsk=v;break;
     case 'cancel-dismiss':S.cancelAsk=null;break;
     case 'cancel-confirm':cancelBooking(v);return;
@@ -973,6 +1021,8 @@ function refreshList(){
   if (head) head.textContent = S.q.trim() ? 'Results' : 'Available venues';
 }
 
+document.addEventListener('submit',e=>{if(e.target.id==='customer-auth-form'){e.preventDefault();submitAuth(e.target);}});
+
 document.addEventListener('input', e => {
   if (e.target.id === 'q') { S.q=e.target.value;refreshList();return; }
   if (e.target.id === 'customer-name') S.customerName=e.target.value;
@@ -993,7 +1043,7 @@ function loadBookings(){
   if(bookingsRequest)return bookingsRequest;
   S.loadingBookings=true;S.bookingsError='';
   bookingsRequest=(async()=>{
-    try{await ensureSession();S.bookings=(await api('/api/public/bookings')).bookings;}
+    try{await ensureSession();const data=await api('/api/public/bookings');applyProfile(data.user);S.bookings=data.bookings;}
     catch(error){S.bookingsError=error.message;throw error;}
     finally{S.loadingBookings=false;bookingsRequest=null;}
   })();
@@ -1017,7 +1067,7 @@ async function shareBooking(){
 }
 let refreshing=false;
 async function refreshLive(){
-  if(refreshing||S.loadingVenues||availabilityRequests.size||S.bookingBusy||document.hidden||document.activeElement?.tagName==='INPUT'||!S.csrf)return;
+  if(refreshing||S.loadingVenues||availabilityRequests.size||S.bookingBusy||S.authBusy||document.hidden||document.activeElement?.tagName==='INPUT'||!S.csrf)return;
   refreshing=true;
   try{if(S.screen==='bookings')await loadBookings();else if(['home','find','turf'].includes(S.screen)){await Promise.all(TURFS.map(t=>loadAvailability(t.id,S.screen==='home'?0:S.day,true)));}else return;S.apiError='';render(true);}
   catch(error){S.apiError='Live availability could not refresh. Check your connection.';render(true);}finally{refreshing=false;}
@@ -1028,5 +1078,6 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLiv
 const ledgerEvents=new EventSource('/api/public/events');
 ledgerEvents.addEventListener('ledger',refreshLive);
 
+if(typeof location.search==='string'&&location.search)finishEmailLink();
 render();
 loadVenues();

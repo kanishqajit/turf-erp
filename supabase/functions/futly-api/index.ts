@@ -43,7 +43,7 @@ Deno.serve(async request=>{
   // Cloud instances do not share an in-memory connection list. Clients use
   // their existing periodic refresh until a durable event channel is added.
   if(path==='/api/public/events')return new Response(null,{status:204,headers:{'Cache-Control':'no-store'}});
-  const env={NODE_ENV:'production',TRUST_PROXY:'1',TURF_TIME_ZONE:'Asia/Kolkata'};
+  const env={NODE_ENV:'production',TRUST_PROXY:'1',TURF_TIME_ZONE:'Asia/Kolkata',SUPABASE_URL:Deno.env.get('SUPABASE_URL'),SUPABASE_ANON_KEY:Deno.env.get('SUPABASE_ANON_KEY')};
   const persistence=cloudPersistence(transport,env);
   const {api,readJson}=createApi(persistence,env);
   const headers=Object.fromEntries(request.headers);
@@ -69,15 +69,15 @@ Deno.serve(async request=>{
       if(!await response.json())throw new ProductError(429,'rate_limited','Too many requests. Try again shortly.');
     };
     const ip=headers['x-forwarded-for'];
-    if(path==='/api/auth/login'){
+    if(path==='/api/auth/login'||/^\/api\/public\/auth\/(login|signup|recover|exchange|password)$/.test(path)){
       await checkRate('login-ip:'+ip,30,900);
-      await checkRate('login-account:'+String(req.parsedBody?.email||'').trim().toLowerCase(),10,900);
+      if(req.parsedBody?.email)await checkRate('login-account:'+String(req.parsedBody.email).trim().toLowerCase(),10,900);
     }else if(!['GET','HEAD'].includes(request.method))await checkRate('mutation-ip:'+ip,120,60);
     else if(path==='/api/public/session')await checkRate('guest-ip:'+ip,60,60);
     const output=await persistence.run(async()=>{
       let status=200,body:BodyInit|null=null;
       const responseHeaders=new Headers();
-      const res={setHeader:(key:string,value:string)=>responseHeaders.set(key,String(value)),
+      const res={setHeader:(key:string,value:string|string[])=>{responseHeaders.delete(key);for(const item of [value].flat())responseHeaders.append(key,item);},
         writeHead:(code:number,extra={})=>{status=code;for(const [key,value]of Object.entries(extra))responseHeaders.set(key,String(value));},
         end:(value:BodyInit|null)=>{body=value;}};
       await api(req,res,url);

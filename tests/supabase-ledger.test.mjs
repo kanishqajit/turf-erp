@@ -18,6 +18,7 @@ test('Supabase relational ledger protects and persists the complete venue workfl
   await pg.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;');
   await pg.exec(sql);
   await pg.exec(readFileSync(new URL('../supabase/migrations/20261025110933_fast_public_venues.sql',import.meta.url),'utf8'));
+  await pg.exec(readFileSync(new URL('../supabase/migrations/20261025123634_customer_profile_bookings.sql',import.meta.url),'utf8'));
   await pg.query('UPDATE futly.ledger_meta SET integration_token_hash=$1 WHERE id=1',[sha(token)]);
   const transport={
     read:async()=> (await pg.query('SELECT public.futly_ledger_read($1) AS data',[token])).rows[0].data,
@@ -39,13 +40,16 @@ test('Supabase relational ledger protects and persists the complete venue workfl
       assert.equal((await pg.query('SELECT count(*)::int AS n FROM futly.users')).rows[0].n,1);
     });
     await t.test('customer booking and staff payment use the same cloud rows',async()=>{
-      await ledger.run(()=>{const s=ledger.customer.createSession();customer=ledger.customer.session(s.token);});
+      await ledger.run(()=>{const s=ledger.customer.createSession();customer={...ledger.customer.session(s.token),profileId:randomUUID()};});
       const date=new Date(Date.now()+86400000).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
       hold=await ledger.run(()=>ledger.customer.createHold(customer,{date,pitch:1,start:1140,end:1230,team:'Cloud Customer FC',contact:'9000000001',idempotencyKey:'cloud-hold-0001'}));
       booking=(await ledger.run(()=>ledger.customer.confirmHold(customer,hold.hold.id))).booking;
       assert.equal(booking.amount,2100);assert.equal((await pg.query('SELECT source FROM futly.bookings WHERE id=$1',[booking.id])).rows[0].source,'app');
       await ledger.run(()=>ledger.store.recordPayment(booking.id,{amount:2100,mode:'Cash',idempotencyKey:'cloud-payment-0001'},owner));
       const history=await ledger.run(()=>ledger.customer.bookings(customer));assert.equal(history[0].outstanding,0);
+      const fresh=await ledger.run(()=>ledger.customer.session(ledger.customer.createSession().token));
+      assert.equal((await ledger.run(()=>ledger.customer.bookings({...fresh,profileId:customer.profileId})))[0].id,booking.id);
+      assert.equal((await ledger.run(()=>ledger.customer.bookings(fresh))).length,0);
       assert.equal((await pg.query('SELECT count(*)::int n FROM futly.payment_events')).rows[0].n,1);
     });
     await t.test('a new API process reads durable booking and receipt',async()=>{

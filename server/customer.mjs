@@ -13,8 +13,11 @@ export function createCustomerApi(store, env = process.env, now = () => Date.now
     id TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS customer_reservations (
     hold_id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES customer_sessions(id),
-    request_key TEXT NOT NULL, request_json TEXT NOT NULL, booking_id TEXT REFERENCES bookings(id),
+    request_key TEXT NOT NULL, request_json TEXT NOT NULL, booking_id TEXT REFERENCES bookings(id), profile_id TEXT,
     UNIQUE(session_id,request_key));`);
+  if(!db.prepare('PRAGMA table_info(customer_reservations)').all().some(c=>c.name==='profile_id'))
+    db.exec('ALTER TABLE customer_reservations ADD COLUMN profile_id TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS customer_reservations_profile ON customer_reservations(profile_id)');
   const {resources,settings:initialSettings,...venue}=publicVenue(500,env);
   const slug=venue.slug;
   const settings = () => ({...initialSettings,depositAmount:store.getSettings().depositAmount});
@@ -66,7 +69,13 @@ export function createCustomerApi(store, env = process.env, now = () => Date.now
       team:b.team,contact:b.contact,status:b.status,paused:!!b.pausedAt,amount:b.amount,discount:b.discount,collected:b.collected,
       outstanding:Math.max(0,b.amount-b.discount-b.collected),pay:b.pay,version:b.version };
   }
+  const owned=(customer,row)=>customer.profileId ? row.profile_id===customer.profileId : !row.profile_id&&row.session_id===customer.id;
+  function claim(customer,profileId){
+    db.prepare('UPDATE customer_reservations SET profile_id=? WHERE session_id=? AND profile_id IS NULL').run(profileId,customer.id);
+  }
+  function requireAccount(customer){if(!customer.profileId)fail(401,'customer_login_required','Sign in to keep this booking linked to your profile.');}
   function createHold(customer, input){
+    requireAccount(customer);
     const { today,minute }=validateDate(input.date);
     const start=Number(input.start),end=Number(input.end);
     if (!Number.isInteger(start)||!Number.isInteger(end)||start%30||end%30||end-start<60||end-start>240)
@@ -78,6 +87,7 @@ export function createCustomerApi(store, env = process.env, now = () => Date.now
     const request=JSON.stringify(payload);
     const prior=db.prepare('SELECT * FROM customer_reservations WHERE session_id=? AND request_key=?').get(customer.id,key);
     if (prior){
+      if(!owned(customer,prior))fail(409,'request_key_reused','Choose your slot again to start a new booking.');
       if(prior.request_json!==request)fail(409,'request_key_reused','This request belongs to another booking.');
       if(prior.booking_id)return { confirmedBooking:shape(store.getBooking(prior.booking_id)) };
       const hold=db.prepare('SELECT * FROM holds WHERE id=? AND expires_at>?').get(prior.hold_id,now());
@@ -85,14 +95,15 @@ export function createCustomerApi(store, env = process.env, now = () => Date.now
       return { hold:{ id:hold.id,expiresAt:hold.expires_at } };
     }
     const hold=store.createHold(payload,actor(),{ afterCreate:record=>{
-      db.prepare('INSERT INTO customer_reservations (hold_id,session_id,request_key,request_json) VALUES (?,?,?,?)')
-        .run(record.id,customer.id,key,request);
+      db.prepare('INSERT INTO customer_reservations (hold_id,session_id,request_key,request_json,profile_id) VALUES (?,?,?,?,?)')
+        .run(record.id,customer.id,key,request,customer.profileId);
     }});
     return { hold:{ id:hold.id,expiresAt:hold.expiresAt } };
   }
   function confirmHold(customer, id){
-    const reservation=db.prepare('SELECT * FROM customer_reservations WHERE hold_id=? AND session_id=?').get(id,customer.id);
-    if (!reservation)fail(404,'not_found','Reservation not found in this browser.');
+    requireAccount(customer);
+    const reservation=db.prepare('SELECT * FROM customer_reservations WHERE hold_id=?').get(id);
+    if (!reservation||!owned(customer,reservation))fail(404,'not_found','Reservation not found in your account.');
     if (reservation.booking_id)return { booking:shape(store.getBooking(reservation.booking_id)) };
     const hold=db.prepare('SELECT date,start FROM holds WHERE id=?').get(id);
     if(hold){const {today,minute}=validateDate(hold.date);if(hold.date===today&&hold.start<minute)fail(409,'past_slot','That start time has passed. Choose a later slot.');}
@@ -102,17 +113,17 @@ export function createCustomerApi(store, env = process.env, now = () => Date.now
     return { booking:shape(booking) };
   }
   function bookings(customer){
-    return db.prepare('SELECT booking_id FROM customer_reservations WHERE session_id=? AND booking_id IS NOT NULL')
-      .all(customer.id).map(r=>shape(store.getBooking(r.booking_id))).sort((a,b)=>b.date.localeCompare(a.date)||b.start-a.start);
+    return db.prepare(`SELECT booking_id FROM customer_reservations WHERE ${customer.profileId?'profile_id=?':'session_id=? AND profile_id IS NULL'} AND booking_id IS NOT NULL`)
+      .all(customer.profileId||customer.id).map(r=>shape(store.getBooking(r.booking_id))).sort((a,b)=>b.date.localeCompare(a.date)||b.start-a.start);
   }
   function cancel(customer,id){
-    const reservation=db.prepare('SELECT booking_id FROM customer_reservations WHERE booking_id=? AND session_id=?').get(id,customer.id);
-    if(!reservation)fail(404,'not_found','Booking not found in this browser.');
+    const reservation=db.prepare('SELECT * FROM customer_reservations WHERE booking_id=?').get(id);
+    if(!reservation||!owned(customer,reservation))fail(404,'not_found','Booking not found in your account.');
     const b=store.getBooking(id),{today,minute}=(()=>{const p=todayParts();return {today:`${p.year}-${p.month}-${p.day}`,minute:Number(p.hour)*60+Number(p.minute)}})();
     if(b.status==='cancelled')return { booking:shape(b) };
     if(b.status!=='upcoming'||b.date<today||(b.date===today&&b.start<=minute))fail(409,'cannot_cancel','Contact the venue to change a match that has started.');
     store.releaseBooking(id,{...actor(),role:'manager'},'Customer cancelled an unpaid future booking',b.version);
     return { booking:shape(store.getBooking(id)) };
   }
-  return { slug,venue,resources,settings,session,createSession,availability,createHold,confirmHold,bookings,cancel };
+  return { slug,venue,resources,settings,session,createSession,claim,availability,createHold,confirmHold,bookings,cancel };
 }
