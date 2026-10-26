@@ -69,7 +69,7 @@ Deno.serve(async request=>{
       if(!await response.json())throw new ProductError(429,'rate_limited','Too many requests. Try again shortly.');
     };
     const ip=headers['x-forwarded-for'];
-    if(path==='/api/auth/login'||/^\/api\/public\/auth\/(login|signup|recover|exchange|password)$/.test(path)){
+    if(path==='/api/auth/login'||/^\/api\/public\/auth\/(login|signup|recover|exchange|password|google)$/.test(path)){
       await checkRate('login-ip:'+ip,30,900);
       if(req.parsedBody?.email)await checkRate('login-account:'+String(req.parsedBody.email).trim().toLowerCase(),10,900);
     }else if(!['GET','HEAD'].includes(request.method))await checkRate('mutation-ip:'+ip,120,60);

@@ -173,3 +173,28 @@ After the Git-driven migration/function/frontend deployment succeeds, verify
 sign-up/sign-in, booking creation, a second browser sign-in with the same account,
 and sign-out. Another customer must not see or cancel the first customer's
 booking. Staff bookings and accounts keep their existing authentication flow.
+
+### Google customer sign-in
+
+Google uses the same customer Auth IDs and booking ownership as email/password.
+Supabase automatically links a Google identity to an existing verified account
+with the same email; Futly never matches bookings using a browser-supplied email.
+The server starts Google OAuth with PKCE and a private verifier cookie, and the
+callback verifies the resulting session through Supabase Auth before claiming
+browser bookings. No Google API access or refresh tokens are stored by Futly.
+
+Configure a Google OAuth web client for Futly with JavaScript origin
+`https://futly-prototype.pages.dev` and redirect URI
+`https://ofjgkrobvzwqkuqgxdho.supabase.co/auth/v1/callback`. Use only the basic
+`openid`, email and profile scopes. Set the Supabase Google provider client ID
+and secret through its dashboard, preserving nonce and email checks. Add the
+exact Supabase redirect allow-list entry
+`https://futly-prototype.pages.dev/book/?auth=google`.
+Google OAuth credentials and customer tokens must never be committed to Git.
+Publish the Google OAuth audience when ready for all customers; testing mode
+may restrict who can sign in.
+
+If Google sign-in starts from checkout, the unfinished slot and contact fields
+are kept only in that tab's session storage for up to one hour. On return Futly
+reloads availability before showing checkout; a newly occupied slot must be
+selected again. Booking confirmation still requires an explicit customer action.

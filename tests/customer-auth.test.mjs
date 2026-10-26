@@ -127,3 +127,35 @@ test('password recovery is generic and logout revokes the current Auth session',
   assert.equal(signedOut.user,null);assert.equal(signedOut.cookie.length,2);assert.ok(signedOut.cookie.every(c=>c.includes('Max-Age=0')));
   assert.ok(calls.at(-1).url.endsWith('logout?scope=local'));
 });
+
+test('Google authorization uses a fixed provider, browser-bound PKCE and the same verified account',async()=>{
+  let verifier;
+  const auth=createCustomerAuth(env,async(url,options)=>{
+    if(url.endsWith('/settings'))return Response.json({external:{google:true}});
+    if(url.includes('grant_type=pkce')){verifier=JSON.parse(options.body).code_verifier;return Response.json(tokens);}
+    return Response.json({...user,user_metadata:{full_name:'Google Player'}});
+  });
+  const started=await auth.action('google',{provider:'attacker',redirectTo:'https://attacker.test'},{},'https://futly.test');
+  assert.equal(started.user,null);assert.ok(!started.confirmationRequired);
+  const url=new URL(started.url);assert.equal(url.origin,'https://auth.test');assert.equal(url.pathname,'/auth/v1/authorize');
+  assert.equal(url.searchParams.get('provider'),'google');assert.equal(url.searchParams.get('redirect_to'),'https://futly.test/book/?auth=google');
+  assert.equal(url.searchParams.get('code_challenge_method'),'s256');assert.equal(url.searchParams.get('prompt'),'select_account');
+  const exchanged=await auth.action('exchange',{code:'google-code'},{[PROOF_COOKIE]:value(started.cookie)},'https://futly.test');
+  assert.equal(createHash('sha256').update(verifier).digest('base64url'),url.searchParams.get('code_challenge'));
+  assert.equal(exchanged.user.id,user.id);assert.equal(exchanged.user.name,'Google Player');assert.equal(exchanged.provider,'google');assert.equal(exchanged.recovery,false);
+  const disabled=createCustomerAuth(env,async()=>Response.json({external:{google:false}}));
+  await assert.rejects(disabled.action('google',{}, {},'https://futly.test'),e=>e.status===503&&e.code==='google_not_configured');
+});
+
+test('Google start endpoint requires CSRF and returns only a public authorization URL',async()=>{
+  const w=workspace();let calls=0;
+  const auth=createCustomerAuth(env,async()=>{calls++;return Response.json({external:{google:true}})});
+  const {api}=createApi({store:w.store,customer:w.customer},{...env,TRUST_PROXY:'1'},auth);
+  try{
+    const guest=await invoke(api,'/api/public/session');const cookies=guest.headers['Set-Cookie'][0].split(';')[0];
+    await assert.rejects(invoke(api,'/api/public/auth/google',{method:'POST',cookies,body:{}}),e=>e.code==='invalid_csrf');assert.equal(calls,0);
+    const response=await invoke(api,'/api/public/auth/google',{method:'POST',cookies,csrf:guest.data.csrfToken,body:{redirectTo:'https://attacker.test'}});
+    assert.equal(response.status,200);assert.equal(response.data.user,null);assert.ok(response.data.url.startsWith('https://auth.test/auth/v1/authorize?'));
+    assert.match(response.headers['Set-Cookie'],/HttpOnly/);assert.ok(!JSON.stringify(response.data).includes('verifier'));
+  }finally{w.store.close();}
+});

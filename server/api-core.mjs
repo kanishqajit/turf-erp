@@ -158,7 +158,7 @@ async function api(req, res, url){
       rateLimitMutation({session_id:'customer:'+customer.id});
       rateLimitMutation({session_id:'public-ip:'+requestIp(req)});
     }
-    if(req.method==='POST'&&(match=path.match(/^\/api\/public\/auth\/(login|signup|logout|recover|exchange|password)$/))){
+    if(req.method==='POST'&&(match=path.match(/^\/api\/public\/auth\/(login|signup|logout|recover|exchange|password|google)$/))){
       const body=await readJson(req);
       const keys=['login','signup','recover'].includes(match[1])?checkLoginLimit(req,body.email,'customer'):null;
       // External Auth operations run once even if the optimistic ledger commit retries.
@@ -167,7 +167,7 @@ async function api(req, res, url){
       try{result=await req.customerAuthAction;}catch(error){if(keys)recordLoginFailure(keys);throw error;}
       if(keys)clearLoginFailures(keys);
       if(result.user)customerApi.claim(customer,result.user.id);
-      return json(res,200,{user:result.user,confirmationRequired:!!result.confirmationRequired,recovery:!!result.recovery},
+      return json(res,200,{user:result.user,confirmationRequired:!!result.confirmationRequired,recovery:!!result.recovery,provider:result.provider,...(result.url?{url:result.url}:{})},
         result.cookie?{'Set-Cookie':result.cookie}:{});
     }
     const auth=await resolveAuth();

@@ -31,7 +31,7 @@ export function createCustomerAuth(env={}, fetcher=fetch){
   function profile(user){
     // Identity comes only from Auth's verified /user response. Metadata is display-only.
     if(!user?.id||!user.email||user.is_anonymous)throw new ProductError(401,'customer_login_required','Sign in to your customer account.');
-    return {id:user.id,email:user.email,name:String(user.user_metadata?.name||'').slice(0,120)};
+    return {id:user.id,email:user.email,name:String(user.user_metadata?.name||user.user_metadata?.full_name||'').slice(0,120)};
   }
   async function fromTokens(tokens){
     if(!tokens?.access_token||!tokens.refresh_token)throw new ProductError(401,'customer_login_required','Sign in to your customer account.');
@@ -58,6 +58,15 @@ export function createCustomerAuth(env={}, fetcher=fetch){
     return {email,password};
   }
   async function action(name,body,cookies,origin){
+    if(name==='google'){
+      const settings=await request('settings');
+      if(!settings.external?.google)throw new ProductError(503,'google_not_configured','Google sign-in is not available yet. Use email and password for now.');
+      const verifier=randomBytes(32).toString('base64url');
+      const authorize=new URL(base+'/auth/v1/authorize');
+      authorize.search=new URLSearchParams({provider:'google',redirect_to:origin+'/book/?auth=google',
+        code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'s256',prompt:'select_account'}).toString();
+      return {user:null,url:authorize.href,cookie:cookie(PROOF_COOKIE,encode({verifier,provider:'google'}),3600)};
+    }
     if(name==='login')return fromTokens(await request('token?grant_type=password',{method:'POST',body:credentials(body)}));
     if(name==='signup'||name==='recover'){
       const input=name==='signup'?credentials(body,true):{email:credentials({...body,password:'unused'}).email};
@@ -71,9 +80,9 @@ export function createCustomerAuth(env={}, fetcher=fetch){
     }
     if(name==='exchange'){
       const proof=decode(cookies[PROOF_COOKIE]);
-      if(!proof?.verifier||typeof body.code!=='string'||body.code.length>200)throw new ProductError(400,'auth_failed','Open the email link in the browser where you requested it, or sign in after confirming your email.');
+      if(!proof?.verifier||typeof body.code!=='string'||body.code.length>200)throw new ProductError(400,'auth_failed','This sign-in link has expired or belongs to another browser. Start sign-in again.');
       const result=await fromTokens(await request('token?grant_type=pkce',{method:'POST',body:{auth_code:body.code,code_verifier:proof.verifier}}));
-      return {...result,recovery:!!proof.recovery,cookie:[result.cookie,cookie(PROOF_COOKIE,'',0)]};
+      return {...result,recovery:!!proof.recovery,provider:proof.provider||'email',cookie:[result.cookie,cookie(PROOF_COOKIE,'',0)]};
     }
     const current=await session(cookies[AUTH_COOKIE]);
     if(name==='logout'){

@@ -813,6 +813,8 @@ function screenProfile(){
   return `<div class="pad"><span class="tag">YOUR FUTLY ACCOUNT</span><h1 class="t-title" style="margin-top:14px">${title}</h1>
     <p class="t-body">${password?'Use at least 10 characters.':recover?'We’ll email a secure reset link. Open it in this browser.':'Keep your bookings together, across every device.'}</p>
     ${S.loadingBookings&&!S.csrf?'<p class="t-sub">Checking your session…</p>':''}
+    ${!recover&&!password?`<button class="google-signin" data-act="auth-google" ${S.authBusy?'disabled':''}>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.51h3.24c1.89-1.74 2.98-4.3 2.98-7.36Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.24-2.51c-.9.6-2.05.97-3.38.97-2.6 0-4.8-1.76-5.58-4.13H3.08v2.59A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.42 13.92A6 6 0 0 1 6.1 12c0-.67.11-1.32.32-1.92V7.49H3.08A10 10 0 0 0 2 12c0 1.61.39 3.14 1.08 4.51l3.34-2.59Z"/><path fill="#EA4335" d="M12 5.95c1.47 0 2.79.51 3.83 1.51l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.92 5.49l3.34 2.59A5.99 5.99 0 0 1 12 5.95Z"/></svg>Continue with Google</button><div class="auth-or">or use your email</div>`:''}
     <form id="customer-auth-form" class="card auth-form">
       ${signup?'<label class="booking-field"><span>Your name</span><input name="name" autocomplete="name" maxlength="120" required></label>':''}
       ${!password?`<label class="booking-field"><span>Email</span><input name="email" type="email" autocomplete="email" maxlength="254" value="${esc(S.authEmail)}" required></label>`:''}
@@ -850,17 +852,53 @@ async function signOut(){
   try{if(bookingsRequest)await bookingsRequest.catch(()=>{});await api('/api/public/auth/logout',{method:'POST',body:{}});applyProfile(null);S.customerName='';S.customerPhone='';S.authReturn='';S.recovery=false;S.authMode='login';S.authMessage='You’re signed out.';}
   catch(error){S.authError=error.message;}finally{S.authBusy=false;render(true);}
 }
+const GOOGLE_DRAFT_KEY='futly-google-booking';
+function saveGoogleDraft(){
+  // Only this tab's unfinished booking is retained; no credentials or history.
+  const draft={at:Date.now(),returnTo:S.authReturn==='checkout'?'checkout':'profile',
+    turfId:S.turfId,court:S.court,date:dateForDay(S.day),start:S.start,dur:S.dur,
+    customerName:S.customerName,customerPhone:S.customerPhone};
+  try{sessionStorage.setItem(GOOGLE_DRAFT_KEY,JSON.stringify(draft));}
+  catch{throw new Error('Allow session storage in this browser to return to your booking after Google sign-in.');}
+}
+async function restoreGoogleDraft(returnToCheckout=true){
+  let draft;
+  try{const raw=sessionStorage.getItem(GOOGLE_DRAFT_KEY);sessionStorage.removeItem(GOOGLE_DRAFT_KEY);draft=JSON.parse(raw||'null');}catch{return;}
+  if(!draft||!Number.isFinite(draft.at)||Date.now()-draft.at>3600000||draft.at>Date.now()||draft.returnTo!=='checkout')return;
+  await startupVenues;
+  const venue=TURFS.find(t=>t.id===draft.turfId),court=venue?.courts.find(c=>String(c.id)===String(draft.court));
+  const day=(Date.parse(draft.date+'T00:00:00Z')-Date.parse(dateForDay(0)+'T00:00:00Z'))/86400000;
+  if(!venue||!court||!Number.isInteger(day)||day<0||day>30||!Number.isInteger(draft.start)||draft.start%30||![60,90,120].includes(draft.dur))return;
+  S.turfId=venue.id;S.court=String(court.id);S.day=day;S.start=draft.start;S.dur=draft.dur;S.tab='courts';
+  S.customerName=String(draft.customerName||'').slice(0,120);S.customerPhone=String(draft.customerPhone||'').slice(0,80);
+  await loadAvailability(venue.id,day,true);
+  if(!fits(S.start,S.dur)){S.start=null;S.screen='turf';S.authReturn='';S.apiError='That slot is no longer available. Choose another time.';}
+  else {S.screen=returnToCheckout?'checkout':'profile';S.authReturn=returnToCheckout?'':'checkout';}
+}
+async function startGoogleSignIn(){
+  if(S.authBusy)return;S.authBusy=true;S.authError='';render(true);
+  try{
+    if(bookingsRequest)await bookingsRequest.catch(()=>{});
+    saveGoogleDraft();
+    const data=await api('/api/public/auth/google',{method:'POST',body:{}});
+    location.assign(data.url);
+  }catch(error){try{sessionStorage.removeItem(GOOGLE_DRAFT_KEY);}catch{}S.authError=error.message;S.authBusy=false;render(true);}
+}
 async function finishEmailLink(){
-  const params=new URLSearchParams(location.search),code=params.get('code');
-  if(!code&&!params.get('error')&&!params.get('error_description'))return;
+  const params=new URLSearchParams(location.search),fragment=new URLSearchParams(String(location.hash||'').replace(/^#/,'')),code=params.get('code'),google=params.get('auth')==='google';
+  if(!code&&!params.get('error')&&!params.get('error_description')&&!fragment.get('error'))return;
   // Remove one-use authorization codes from the address bar before other work.
   history.replaceState(null,'','/book/');S.screen='profile';S.authBusy=true;
   try{
-    if(!code)throw new Error('The email link has expired. Request a new link.');
+    if(!code)throw new Error(google?'Google sign-in was cancelled or could not complete. Try again.':'The email link has expired. Request a new link.');
+    await ensureSession();
+    if(bookingsRequest)await bookingsRequest.catch(()=>{});
     const data=await api('/api/public/auth/exchange',{method:'POST',body:{code}});
-    applyProfile(data.user);S.recovery=data.recovery;S.authMessage=data.recovery?'Choose your new password.':'Email confirmed. Your account is ready.';
+    applyProfile(data.user);S.recovery=data.recovery;S.authMessage=data.recovery?'Choose your new password.':data.provider==='google'?'You’re signed in with Google.':'Email confirmed. Your account is ready.';
     await loadBookings();
-  }catch(error){S.authError=error.message;}finally{S.authBusy=false;render(false);}
+    if(data.provider==='google')await restoreGoogleDraft();
+  }catch(error){S.authError=error.message;if(google){try{await restoreGoogleDraft(false);}catch{}}else{try{sessionStorage.removeItem(GOOGLE_DRAFT_KEY);}catch{}}}
+  finally{S.authBusy=false;render(false);}
 }
 
 /* ─── render ──────────────────────────────────────────── */
@@ -951,6 +989,7 @@ document.addEventListener('click', e => {
       if(v==='bookings')loadBookings().then(()=>render(true)).catch(error=>{S.apiError=error.message;render(true)});
       keep = false;
       break;
+    case 'auth-google':startGoogleSignIn();return;
     case 'auth-mode':S.authMode=v;S.recovery=v==='password';S.authError='';S.authMessage='';break;
     case 'auth-back':S.screen=S.authReturn||'home';S.authReturn='';break;
     case 'auth-logout':signOut();return;
@@ -1078,6 +1117,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshLiv
 const ledgerEvents=new EventSource('/api/public/events');
 ledgerEvents.addEventListener('ledger',refreshLive);
 
+let startupVenues;
 if(typeof location.search==='string'&&location.search)finishEmailLink();
 render();
-loadVenues();
+startupVenues=loadVenues();
