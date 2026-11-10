@@ -3,6 +3,7 @@ import { can, applyTheme, loadPrefs, S } from './state.js';
 import { esc, weekStart } from './domain.js';
 
 export async function apiRequest(path, { method='GET', body } = {}){
+  const requestUser=S.user;
   const headers = { Accept:'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (!['GET','HEAD'].includes(method) && S.csrf) headers['X-CSRF-Token'] = S.csrf;
@@ -11,7 +12,7 @@ export async function apiRequest(path, { method='GET', body } = {}){
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok){
-    if (response.status === 401){ S.user = null; S.csrf = ''; }
+    if (response.status === 401&&S.user===requestUser){ S.user = null; S.csrf = ''; }
     const apiUnavailable = path.startsWith('/api/') && [404, 405, 501].includes(response.status);
     const error = new Error(data.error?.message || (apiUnavailable
       ? 'The Turf Operations API is not running at this address. Start the app with npm start and open the URL printed in the terminal.'
@@ -35,32 +36,52 @@ function accountRange(){
   return { from:isoDate(fromDate),to:isoDate(toDate) };
 }
 
-export async function loadState(){
-  const { from, to } = stateRange();
-  const states = [await apiRequest(`/api/state?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)];
-  const today = isoDate(TODAY);
-  if (today < from || today > to) states.push(await apiRequest(`/api/state?from=${today}&to=${today}`));
-  const merge = key => Array.from(new Map(states.flatMap(state => state[key]).map(record => [record.id, record])).values());
-  S.bookings = merge('bookings');
+let stateFlight=null,stateOwner=null,stateVersion=0;
+
+function desktopQuery(){
+  const {from,to}=stateRange(),accounts=accountRange(),include=[];
+  if(S.view==='accounts')include.push('accounts');
+  if(S.view==='settings'){
+    if(can('manager'))include.push('audit');
+    if(can('owner'))include.push('users');
+  }
+  return new URLSearchParams({from,to,include:include.join(','),accountsFrom:accounts.from,accountsTo:accounts.to});
+}
+
+function applyDesktop(data){
+  if(stateOwner!==data.user.id){
+    S.bookings=[];S.holds=[];S.blocks=[];S.checkedIn={};
+    S.accounts=[];S.paymentEvents=[];S.audit=[];S.users=[];stateOwner=data.user.id;
+  }
+  S.user=data.user;S.csrf=data.csrfToken;
+  if(data.user.mustChangePassword)return;
+  S.bookings=data.state.bookings;S.holds=data.state.holds;S.blocks=data.state.blocks;
   S.checkedIn=Object.fromEntries(S.bookings.filter(b=>b.checkedInAt).map(b=>[b.id,b.checkedInAt]));
-  S.holds = merge('holds');
-  S.blocks = merge('blocks');
-  S.settings = states[0].settings || { depositAmount:500 };
-  if (!S.depositDirty) S.depositDraft = String(S.settings.depositAmount);
-  const accountDates=accountRange();
-  try {
-    const accounts=await apiRequest(`/api/accounts?from=${accountDates.from}&to=${accountDates.to}`);
-    S.accounts=accounts.bookings;S.paymentEvents=accounts.payments;
-  } catch (error){ S.apiError=error.message; }
-  if (can('manager')){
-    try { S.audit = (await apiRequest('/api/audit?limit=200')).events; S.auditError=''; }
-    catch (error) { S.audit = []; S.auditError=error.message; }
-  } else { S.audit = []; S.auditError=''; }
-  if (can('owner')){
-    try { S.users=(await apiRequest('/api/users')).users; }
-    catch (error){ S.apiError=error.message; }
-  } else S.users=[];
+  S.settings=data.state.settings||{depositAmount:500};
+  if(!S.depositDirty)S.depositDraft=String(S.settings.depositAmount);
+  if(data.accounts){S.accounts=data.accounts.bookings;S.paymentEvents=data.accounts.payments;}
+  if(data.audit){S.audit=data.audit;S.auditError='';}
+  if(data.users)S.users=data.users;
+  if(!can('manager'))S.audit=[];
+  if(!can('owner'))S.users=[];
   S.lastSyncedAt=Date.now();
+}
+
+export async function loadState({force=false}={}){
+  const query=desktopQuery(),initialUser=S.user?.id,key=(initialUser||'')+':'+query;
+  if(stateFlight?.key===key){
+    if(!force)return stateFlight.promise;
+    await stateFlight.promise.catch(()=>{});
+  }
+  const version=++stateVersion;
+  const promise=(async()=>{
+    const data=await apiRequest('/api/desktop?'+query);
+    // A response from an old range or signed-out session cannot replace newer
+    // screen data or repopulate a shared console after logout.
+    if(version===stateVersion&&S.user?.id===initialUser)applyDesktop(data);
+  })();
+  const flight={key,promise};stateFlight=flight;
+  try{return await promise;}finally{if(stateFlight===flight)stateFlight=null;}
 }
 
 export async function mutate(path, body = {}){
@@ -68,8 +89,16 @@ export async function mutate(path, body = {}){
   S.busy = true;
   S.apiError = '';
   try {
-    const result = await apiRequest(path, { method:'POST', body });
-    try { await loadState(); }
+    const userId=S.user?.id;
+    ++stateVersion;
+    const query=desktopQuery();query.set('refresh','desktop');
+    const result = await apiRequest(path+(path.includes('?')?'&':'?')+query, { method:'POST', body });
+    try {
+      if(S.user?.id===userId){
+        if(result.desktop)applyDesktop(result.desktop);
+        else await loadState({force:true});
+      }
+    }
     catch (error){ S.apiError=`Change saved, but the screen could not refresh: ${error.message}`; }
     return result;
   } catch (error){
@@ -89,10 +118,7 @@ export async function boot(onReady){
      page does not flash light on its way into dark. */
   applyTheme();
   try {
-    const auth = await apiRequest('/api/auth/me');
-    S.user = auth.user;
-    S.csrf = auth.csrfToken;
-    if (!S.user.mustChangePassword) await loadState();
+    await loadState();
   } catch (error){
     if (error.code !== 'authentication_required') S.authError = error.message;
   }

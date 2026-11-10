@@ -89,7 +89,16 @@ function playBoard(){
   });
 }
 
+let loadedView=null;
 export function render(){
+  const viewKey=S.user?S.user.id+':'+S.view:null;
+  if(viewKey!==loadedView){
+    loadedView=viewKey;
+    if(S.user&&!S.user.mustChangePassword&&['accounts','settings'].includes(S.view)){
+      S.viewLoading=S.view;
+      refreshOperationalState().finally(()=>{if(loadedView===viewKey)S.viewLoading=false;render();});
+    }
+  }
   const active=document.activeElement;
   let caret=null;
   try{caret=active?[active.selectionStart,active.selectionEnd]:null;}catch(_){}
@@ -100,7 +109,7 @@ export function render(){
   if(S.user.mustChangePassword){document.getElementById('view').innerHTML=passwordChangeHtml();document.getElementById('modals').innerHTML='';return;}
   const error=S.apiError?`<div class="error-banner app-error" role="alert"><span>${esc(S.apiError)}</span>
     <button data-act="dismiss-error" aria-label="Dismiss">&times;</button></div>`:'';
-  document.getElementById('view').innerHTML=error+VIEWS[S.view]();
+  document.getElementById('view').innerHTML=error+(S.viewLoading===S.view?'<div class="empty" role="status">Loading '+(S.view==='accounts'?'accounts':'settings')+'…</div>':VIEWS[S.view]());
   const modalRoot=document.getElementById('modals'),hadModal=!!modalRoot.querySelector('[role="dialog"]');
   modalRoot.innerHTML=modalsHtml();
   const dialog=modalRoot.querySelector('[role="dialog"]'),blocked=!!dialog;

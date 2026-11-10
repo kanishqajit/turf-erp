@@ -11,7 +11,7 @@ export const TABLES=['users','sessions','bookings','holds','blocks','payment_eve
 const EVENTS=new Set(['bookings','holds','blocks','payment_events','venue_settings']);
 const quote=value=>'"'+value.replaceAll('"','""')+'"';
 
-export function workspace(env={},state=null){
+export function workspace(env={},state=null,auditSequence=0){
   const store=createStore({filename:':memory:',sessionIdleMs:Number(env.TURF_SESSION_IDLE_MINUTES||30)*60000,
     timeZone:env.TURF_TIME_ZONE||'Asia/Kolkata'});
   const customer=createCustomerApi(store,env);
@@ -23,6 +23,9 @@ export function workspace(env={},state=null){
       const insert=store.db.prepare(`INSERT INTO ${quote(table)} (rowid,${columns.map(quote).join(',')}) VALUES (${['?',...columns.map(()=>'?')].join(',')})`);
       for(const row of state[table]||[])insert.run(row._ordinal,...columns.map(c=>row[c]??null));
     }
+    if(auditSequence)store.db.prepare("UPDATE sqlite_sequence SET seq=? WHERE name='audit_events'").run(auditSequence);
+    if(auditSequence&&!store.db.prepare("SELECT 1 FROM sqlite_sequence WHERE name='audit_events'").get())
+      store.db.prepare("INSERT INTO sqlite_sequence(name,seq) VALUES ('audit_events',?)").run(auditSequence);
     store.db.exec('PRAGMA foreign_keys=ON');
     if(store.db.prepare('PRAGMA foreign_key_check').all().length){store.close();throw new Error('Cloud ledger has invalid record references.');}
     store.db.prepare("INSERT OR IGNORE INTO venue_settings (key,value_integer,updated_at) VALUES ('deposit_amount',500,?)").run(new Date().toISOString());
@@ -34,7 +37,7 @@ export function exportState(store){
   return Object.fromEntries(TABLES.map(table=>[table,store.db.prepare(`SELECT rowid AS _ordinal,* FROM ${quote(table)} ORDER BY rowid`).all().map(row=>({...row}))]));
 }
 
-export function changesBetween(before,after){
+export function changesBetween(before,after,ordinals={}){
   const changes={};
   for(const table of TABLES){
     const key=table==='venue_settings'?'key':'id';
@@ -42,6 +45,14 @@ export function changesBetween(before,after){
       // Reservation identity is the original hold even after confirmation.
       changes[table]=diff(before[table]||[],after[table]||[],'hold_id');
     }else changes[table]=diff(before[table]||[],after[table]||[],key);
+    // New rowids must follow the global high-water mark, even when this
+    // request loaded only a subset of rows. Existing identities are untouched.
+    const identity=table==='customer_reservations'?'hold_id':key;
+    const existing=new Set((before[table]||[]).map(row=>String(row[identity])));
+    let ordinal=Number(ordinals[table]||0);
+    if(Object.hasOwn(ordinals,table))for(const row of changes[table].upsert){
+      if(!existing.has(String(row[identity])))row._ordinal=++ordinal;
+    }
     if(!changes[table].upsert.length&&!changes[table].remove.length)delete changes[table];
   }
   return changes;
@@ -81,28 +92,34 @@ export function createCloudTransport(env,fetcher=fetch){
 
 export function cloudPersistence(transport,env={},onChange=()=>{}){
   const context=new AsyncLocalStorage();
-  const fallback=workspace(env);
+  let fallback;
+  const timings={read:0,hydrate:0,handler:0,diff:0,commit:0,retries:0};
   const proxy=kind=>new Proxy({}, {get:(_,key)=>{
-    const target=(context.getStore()||fallback)[kind];
+    const target=(context.getStore()||(fallback ||= workspace(env)))[kind];
     const value=target[key];return typeof value==='function'?value.bind(target):value;
   }});
   async function run(callback){
     for(let attempt=0;attempt<5;attempt++){
-      const before=await transport.read();
-      const working=workspace(env,before.state);
+      let started=performance.now();
+      const before=await transport.read();timings.read+=performance.now()-started;
+      started=performance.now();
+      const working=workspace(env,before.state,before.auditSequence);timings.hydrate+=performance.now()-started;
       try{
-        const result=await context.run(working,callback);
-        const changes=changesBetween(before.state,exportState(working.store));
+        started=performance.now();
+        const result=await context.run(working,callback);timings.handler+=performance.now()-started;
+        started=performance.now();
+        const changes=changesBetween(before.state,exportState(working.store),before.ordinals);timings.diff+=performance.now()-started;
         if(!Object.keys(changes).length)return result;
-        const committed=await transport.commit(before.revision,randomUUID(),changes);
-        if(committed.conflict)continue;
+        started=performance.now();
+        const committed=await transport.commit(before.revision,randomUUID(),changes);timings.commit+=performance.now()-started;
+        if(committed.conflict){timings.retries++;continue;}
         if(Object.keys(changes).some(table=>EVENTS.has(table)))onChange();
         return result;
       }finally{working.store.close();}
     }
     throw new ProductError(409,'cloud_busy','Another staff member changed the ledger. Retry your action.');
   }
-  return {mode:'supabase',store:proxy('store'),customer:proxy('customer'),run,close:()=>fallback.store.close()};
+  return {mode:'supabase',store:proxy('store'),customer:proxy('customer'),run,timings,close:()=>fallback?.store.close()};
 }
 
 export async function createPersistence(env,databasePath,onChange=()=>{}){

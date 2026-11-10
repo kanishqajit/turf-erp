@@ -14,8 +14,8 @@ a valid guest session and CSRF token.
 `GET /api/public/venues` uses the separate `futly-venues` Edge Function. It reads
 only `deposit_amount` through the backend-only `futly_public_venue_settings` RPC
 and shares public venue metadata with the main API. This entrypoint imports no
-SQLite engine or full-ledger workspace. Other routes retain `futly-api` and the
-existing ledger rules. Deploy both functions after `build:edge`.
+SQLite engine or full-ledger workspace. Other routes use `futly-api` and the
+existing ledger rules with request-scoped snapshots. Deploy both functions after `build:edge`.
 
 The 25 October 2026 release applied the SQL in
 `supabase/migrations/20261025110933_fast_public_venues.sql` through the connected
@@ -32,11 +32,35 @@ This release passed 55 regression tests and all 10 hosted workflow checks,
 including synthetic unpaid confirmation, staff visibility and cancellation.
 Production deployment: `ee44a20f-049c-44cf-a1e3-97cfd44f3bf8`.
 
+The desktop loads its session and operational state in one `GET /api/desktop`
+request. Accounts are included only on Accounts; audit history and staff lists
+only on Settings and only for authorized roles. Saves request `refresh=desktop`
+and return the new screen state with the durable mutation acknowledgement, so a
+booking, payment or clock action does not trigger a second refresh chain.
+Background polling remains 15 seconds and refreshes the active screen's data.
+Identical in-flight refreshes share a request; older polls cannot replace newer
+mutation results or repopulate a signed-out console.
+
+`futly_api_snapshot` authenticates the trusted backend and applies database rate
+limits in the same RPC as a fresh, scoped read. Calendar and mutation snapshots
+contain relevant dates/records and payment dependencies, not the audit archive.
+Audit reads are bounded; authentication/settings requests do not load bookings.
+Health and the hosted 204 events response avoid SQLite entirely. Customer
+availability is scoped to its day; customer account operations retain the full
+ownership context but omit historical audit bodies.
+
 The API shares the local Node server's domain rules and HTTP routes. Supabase's
 hosted runtime does not implement `node:sqlite`, so its request-scoped in-memory
-workspace uses pinned sql.js 1.13.0. Hosted mode persists no SQLite file. Existing
-staff passwords, roles, guest ownership, CSRF, conflict checks, revision retries,
-clocks, receipts and audit events remain in use.
+workspace uses pinned sql.js 1.13.0. Hosted mode persists no SQLite file.
+Snapshots carry global ordinal high-water marks and an audit sequence so partial
+workspaces append identities without overwriting omitted records. Only diffs
+against the loaded subset are committed, atomically with the existing global
+revision check. Conflicts reread the same scope and rerun domain checks; rate
+limits and external customer Auth actions are not repeated on those retries.
+Staff passwords, roles, session expiry/heartbeat, customer ownership, CSRF,
+idempotency, payment reconciliation, clocks, receipts and audit events remain
+in use. `Server-Timing` reports snapshot, hydrate, handler, diff, commit and retry
+measurements without exposing credentials or record contents.
 
 Only the trusted Cloudflare proxy supplies the integration token. Supabase
 verifies it through the private ledger before serving an application route.
@@ -138,8 +162,9 @@ committed revision.
 
 Free-plan quotas and Supabase inactivity pauses apply. Customer history belongs
 to a browser cookie. Payment records do not charge a payment gateway. This is
-one demo venue. Full-ledger snapshots suit the prototype; replace them with
-scoped PostgreSQL transactions before scaling to busy venues. Physical-phone
+one demo venue. Scoped workspaces still use a global revision for commits; measure contention
+and move domain writes into scoped PostgreSQL transactions before scaling to
+busy venues. Physical-phone
 acceptance and production backup/monitoring remain launch work.
 
 ### Customer accounts

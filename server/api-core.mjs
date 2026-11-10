@@ -130,7 +130,7 @@ function rateLimitMutation(row){
   attempts.push(now);mutationAttempts.set(key,attempts);
 }
 
-async function api(req, res, url){
+async function dispatch(req, res, url){
   const path = url.pathname;
   if (path.startsWith('/api/public/')){
     const cookies=parseCookies(req);
@@ -203,6 +203,7 @@ async function api(req, res, url){
     const row = requireUser(req);
     return json(res, 200, { user:publicActor(row), csrfToken:row.csrf_token });
   }
+  if (req.method === 'GET' && path === '/api/desktop')return json(res,200,desktopPayload(req,url));
   if (req.method === 'POST' && path === '/api/auth/logout'){
     const row = requireUser(req); requireCsrf(req, row);
     store.recordAuthEvent(row,'auth.logout'); store.deleteSession(parseCookies(req)[SESSION_COOKIE]);
@@ -295,6 +296,37 @@ async function api(req, res, url){
     const body=await readJson(req); return json(res,200,store.revokeUserSessions(match[1],user,body.reason));
   }
   throw new ProductError(404, 'not_found', 'API route not found.');
+}
+
+function desktopPayload(req,url){
+    const row=requireUser(req),user=actor(row);
+    const auth={user:publicActor(row),csrfToken:row.csrf_token};
+    if(row.must_change_password)return auth;
+    const state=store.listState(url.searchParams.get('from'),url.searchParams.get('to'));
+    const today=new Intl.DateTimeFormat('en-CA',{timeZone:env.TURF_TIME_ZONE||'Asia/Kolkata'}).format(new Date());
+    if(today<url.searchParams.get('from')||today>url.searchParams.get('to')){
+      const current=store.listState(today,today);
+      for(const key of ['bookings','holds','blocks'])state[key]=Array.from(new Map([...state[key],...current[key]].map(row=>[row.id,row])).values());
+    }
+    const include=new Set((url.searchParams.get('include')||'').split(','));
+    const result={...auth,state};
+    if(include.has('accounts'))result.accounts=store.listAccounts(url.searchParams.get('accountsFrom'),url.searchParams.get('accountsTo'),user);
+    if(include.has('audit'))result.audit=store.listAudit(200,user);
+    if(include.has('users'))result.users=store.listUsers(user);
+    return result;
+}
+
+async function api(req,res,url){
+  if(req.method!=='POST'||url.searchParams.get('refresh')!=='desktop'||url.pathname.startsWith('/api/auth/')||url.pathname.startsWith('/api/public/'))
+    return dispatch(req,res,url);
+  // Validate refresh ranges/permissions before the local-domain mutation too.
+  desktopPayload(req,url);
+  let status=200,body;const extra={};
+  await dispatch(req,{setHeader:(key,value)=>{extra[key]=value;},writeHead:(code,headers={})=>{status=code;Object.assign(extra,headers);},end:value=>{body=value;}},url);
+  const data=JSON.parse(body);
+  if(status>=200&&status<300)data.desktop=desktopPayload(req,url);
+  delete extra['Content-Length'];
+  return json(res,status,data,extra);
 }
 
 return {api,readJson,securityHeaders,json};
