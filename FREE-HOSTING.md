@@ -111,6 +111,12 @@ confirmation/cancellation (Browser Verification FC). The staff phone console
 loaded the shared ledger at 390px without horizontal overflow. Screenshots are
 saved locally under `artifacts/hosting/` and excluded from deployment.
 
+The complete customer-booking check requires an existing, verified customer test
+account in `TEST_CUSTOMER_EMAIL` and `TEST_CUSTOMER_PASSWORD`, alongside the staff
+credentials. It keeps customer Auth and guest-session cookies together, verifies
+anonymous reservation rejection, and signs both accounts out. Without customer
+credentials it stops before making test records.
+
 Run the hosted API check with ignored private configuration:
 
 ```sh
