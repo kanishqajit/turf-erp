@@ -434,41 +434,20 @@ test('a stated start outside the booking window is still a manager correction', 
   } finally { store.close(); }
 });
 
-test('a pitch runs one match at a time', () => {
-  const { store, operator, date, minute } = middayFixture();
-  try {
-    const [first] = store.createBookings([{
-      date, pitch:1, start:minute - 30, end:minute, team:'Ran Over',
-      contact:'+91 90000 00041',
-    }], operator);
-    const [second] = store.createBookings([{
-      date, pitch:1, start:minute, end:minute + 60, team:'Next Up',
-      contact:'+91 90000 00042',
-    }], operator);
-    /* Another pitch is a different piece of grass and is unaffected. */
-    const [elsewhere] = store.createBookings([{
-      date, pitch:2, start:minute, end:minute + 60, team:'Other Pitch',
-      contact:'+91 90000 00043',
-    }], operator);
-
-    const running = store.setStatus(first.id, 'running', operator, '', minute - 20, first.version);
-    assert.equal(running.status, 'running');
-
-    /* The first has run past its booked end, but the ball is still on the
-       pitch: the next hour cannot start until it is closed. */
-    expectCode('pitch_busy', () =>
-      store.setStatus(second.id, 'running', operator, '', minute, second.version));
-    assert.equal(store.listState(date, date).bookings.find(row => row.id === second.id).status, 'upcoming');
-
-    store.setStatus(elsewhere.id, 'running', operator, '', minute, elsewhere.version);
-    assert.equal(store.listState(date, date).bookings.find(row => row.id === elsewhere.id).status, 'running');
-
-    /* Close the first and the pitch is free again. */
-    const done = store.setStatus(first.id, 'done', operator, '', null, running.version);
-    const ready = store.listState(date, date).bookings.find(row => row.id === second.id);
-    assert.equal(done.status, 'done');
-    assert.equal(store.setStatus(second.id, 'running', operator, '', minute, ready.version).status, 'running');
-  } finally { store.close(); }
+test('a pitch runs one match at a time',()=>{
+  const {store,operator,date,minute}=middayFixture();
+  try{
+    const [first,second,elsewhere]=store.createBookings([
+      {date,pitch:1,start:minute-30,end:minute+30,team:'First',contact:'9000000001'},
+      {date,pitch:1,start:minute+30,end:minute+90,team:'Next',contact:'9000000002'},
+      {date,pitch:2,start:minute+30,end:minute+90,team:'Other pitch',contact:'9000000003'},
+    ],operator);
+    const running=store.setStatus(first.id,'running',operator,'',first.start,first.version);
+    expectCode('pitch_busy',()=>store.setStatus(second.id,'running',operator,'',second.start,second.version));
+    store.setStatus(elsewhere.id,'running',operator,'',elsewhere.start,elsewhere.version);
+    store.setStatus(first.id,'done',operator,'',null,running.version);
+    assert.equal(store.setStatus(second.id,'running',operator,'',second.start,second.version).status,'running');
+  }finally{store.close();}
 });
 
 test('today till counts receipt dates independently of booking dates and subtracts refunds',()=>{
@@ -483,5 +462,53 @@ test('today till counts receipt dates independently of booking dates and subtrac
     store.db.prepare("INSERT INTO payment_events (id,booking_id,amount,mode,created_by,created_at) VALUES (?,?,300,'Card',?,?)").run(oldId,b.id,owner.id,new Date(Date.now()-3*86400000).toISOString());
     const state=store.listState('2027-01-01','2027-01-01');
     assert.deepEqual(state.till.by,{Cash:400,UPI:200,Card:0});assert.equal(state.till.total,600);
+  }finally{store.close();}
+});
+
+test('restoring a no-show rechecks bookings, holds and maintenance atomically',()=>{
+  for(const kind of ['booking','hold','block']){
+    const {store,owner,operator,date,minute}=middayFixture();
+    try{
+      const input={date,pitch:0,start:minute+10,end:minute+70,team:'Original',contact:'9000000000'};
+      const b=store.createBookings([input],operator)[0];
+      const missed=store.setStatus(b.id,'noshow',operator,'',null,b.version);
+      if(kind==='booking')store.createBookings([{...input,team:'Replacement'}],operator);
+      if(kind==='hold')store.createHold({...input,team:'Another hold'},operator);
+      if(kind==='block')store.createBlock({...input,reason:'Maintenance occupying the resold slot'},owner);
+      expectCode({booking:'booking_conflict',hold:'hold_conflict',block:'maintenance_conflict'}[kind],()=>store.setStatus(b.id,'upcoming',owner,'Undo mistaken no-show',null,missed.version));
+      assert.equal(store.getBooking(b.id).status,'noshow');
+    }finally{store.close();}
+  }
+});
+
+test('late starts and paused remaining time cannot be sold over or resumed into a reservation',()=>{
+  const {store,owner,operator,date,minute}=middayFixture();
+  try{
+    const [a,b]=store.createBookings([
+      {date,pitch:0,start:minute-30,end:minute+30,team:'Late',contact:'9000000000'},
+      {date,pitch:0,start:minute+30,end:minute+90,team:'Next',contact:'9000000001'},
+    ],operator);
+    expectCode('booking_conflict',()=>store.setStatus(a.id,'running',operator,'',minute,a.version));
+    let running=store.setStatus(a.id,'running',operator,'',a.start,a.version);
+    running=store.controlClock(a.id,'pause',operator,running.version);
+    store.db.prepare('UPDATE bookings SET paused_at=? WHERE id=?').run(Date.now()-120000,a.id);
+    expectCode('booking_conflict',()=>store.controlClock(a.id,'resume',operator,running.version));
+    assert.ok(store.getBooking(a.id).pausedAt);
+    // Closing a conflicting live match is always available to the operator.
+    assert.equal(store.setStatus(a.id,'done',operator,'',null,running.version).status,'done');
+  }finally{store.close();}
+});
+
+test('a paused match protects remaining time across midnight',()=>{
+  const {store,owner,date,minute}=middayFixture();
+  try{
+    const yesterday=new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+    const b=store.createBookings([{date:yesterday,pitch:2,start:1410,end:1440,team:'Overnight',contact:'9000000000'}],owner)[0];
+    store.db.prepare("UPDATE bookings SET status='running',started_at=1410,paused_at=? WHERE id=?")
+      .run(Date.now()-(15+minute)*60000,b.id);
+    const occupied=store.occupiedOnDay(store.getBooking(b.id),date);
+    assert.ok(occupied.end>=minute+14);
+    expectCode('booking_conflict',()=>store.createBookings([{date,pitch:2,start:minute+5,end:minute+65,team:'Would collide',contact:'9000000001'}],owner));
+    assert.ok(store.listState(date,date).bookings.some(row=>row.id===b.id));
   }finally{store.close();}
 });

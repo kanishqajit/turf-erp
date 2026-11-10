@@ -38,6 +38,15 @@ only on Settings and only for authorized roles. Saves request `refresh=desktop`
 and return the new screen state with the durable mutation acknowledgement, so a
 booking, payment or clock action does not trigger a second refresh chain.
 Background polling remains 15 seconds and refreshes the active screen's data.
+Calendar reads are tied to the requested date range and optional histories;
+obsolete reads are aborted and cannot overwrite a newer view or save. Day/week,
+pitch and screen changes close unfinished calendar panels. Group date pickers
+load their full visible range (up to 84 days) before enabling booking. Operational
+snapshots retain today's records when the calendar is on a distant date.
+Sign-out keeps the account visibly signed in until server revocation succeeds.
+Running matches reserve their remaining playing time, including pauses and
+midnight carry; reopening and resuming recheck bookings, holds and maintenance.
+
 Identical in-flight refreshes share a request; older polls cannot replace newer
 mutation results or repopulate a signed-out console.
 

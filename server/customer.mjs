@@ -59,9 +59,9 @@ export function createCustomerApi(store, env = process.env, now = () => Date.now
     validateDate(date);
     const state=store.listState(date,date);
     return { venue, date, resources, settings:settings(), serverTime:new Date(now()).toISOString(),
-      unavailable:[...state.bookings.filter(b=>b.status!=='noshow').map(b=>({ resourceId:b.pitch,start:b.start,end:b.end,kind:'booked' })),
-        ...state.holds.map(h=>({ resourceId:h.pitch,start:h.start,end:h.end,kind:'hold' })),
-        ...state.blocks.map(b=>({ resourceId:b.pitch,start:b.start,end:b.end,kind:'maintenance' }))] };
+      unavailable:[...state.bookings.filter(b=>!['noshow','cancelled'].includes(b.status)).flatMap(b=>{const occupied=store.occupiedOnDay(b,date);return occupied?[{resourceId:b.pitch,...occupied,kind:'booked'}]:[];}),
+        ...state.holds.filter(h=>h.date===date).map(h=>({ resourceId:h.pitch,start:h.start,end:h.end,kind:'hold' })),
+        ...state.blocks.filter(b=>b.date===date).map(b=>({ resourceId:b.pitch,start:b.start,end:b.end,kind:'maintenance' }))] };
   }
   function shape(b){
     return { id:b.id,code:`FUTLY-${b.id.slice(0,8).toUpperCase()}`,venueSlug:slug,venueName:venue.name,

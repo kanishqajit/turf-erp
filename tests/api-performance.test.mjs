@@ -138,6 +138,36 @@ test('scoped hosted APIs preserve domain rules, identities, authentication and d
       const state=(await call(staff,'/api/state?from='+day(3)+'&to='+day(3))).data;assert.ok(!state.bookings.some(b=>b.id===created.id));
       assert.equal((await pg.query('SELECT count(*)::int n FROM futly.payment_events WHERE booking_id=$1',[created.id])).rows[0].n,2);
     });
+    await t.test('reactivating a resold no-show fails without changing either booking',async()=>{
+      const input={date:day(0),pitch:2,start:720,end:780,team:'Missed',contact:'9000000000'};
+      const a=(await call(admin,'/api/bookings','POST',input,201)).data.bookings[0];
+      const noShow=(await call(admin,`/api/bookings/${a.id}/status`,'POST',{status:'noshow',version:a.version})).data.booking;
+      const b=(await call(admin,'/api/bookings','POST',{...input,team:'Replacement'},201)).data.bookings[0];
+      await call(admin,`/api/bookings/${a.id}/status`,'POST',{status:'upcoming',version:noShow.version},409);
+      const rows=(await pg.query('SELECT id,status FROM futly.bookings WHERE id=ANY($1)',[[a.id,b.id]])).rows;
+      assert.equal(rows.find(r=>r.id===a.id).status,'noshow');assert.equal(rows.find(r=>r.id===b.id).status,'upcoming');
+    });
+    await t.test('running time is protected in scoped staff writes and public availability',async()=>{
+      const input={date:day(1),pitch:2,start:600,end:660,team:'Late running',contact:'9000000000'};
+      const a=(await call(admin,'/api/bookings','POST',input,201)).data.bookings[0];
+      await call(admin,`/api/bookings/${a.id}/status`,'POST',{status:'running',atMinute:630,version:a.version});
+      const available=(await call(client(),'/api/public/venues/futly-demo/availability?date='+day(1))).data;
+      assert.ok(available.unavailable.some(r=>r.resourceId===2&&r.end>=690));
+      await call(staff,'/api/holds','POST',{...input,start:660,end:720,team:'Would overlap'},409);
+      await call(staff,'/api/bookings','POST',{...input,start:660,end:720,team:'Would overlap'},409);
+    });
+    await t.test('expanded group ranges load real future bookings and keep ordinary queries bounded',async()=>{
+      const input={date:day(30),pitch:1,start:600,end:660,team:'Future group day',contact:'9000000000'};
+      const b=(await call(admin,'/api/bookings','POST',input,201)).data.bookings[0];
+      const data=(await call(staff,'/api/desktop?from='+day(0)+'&to='+day(83)+'&groupRange=1')).data;
+      assert.ok(data.state.bookings.some(r=>r.id===b.id));
+      await call(staff,'/api/desktop?from='+day(0)+'&to='+day(83),'GET',undefined,400);
+      await call(staff,'/api/desktop?from='+day(0)+'&to='+day(90)+'&groupRange=1','GET',undefined,400);
+    });
+    await t.test('today operations survive switching to sessions after a distant calendar jump',async()=>{
+      const data=(await call(staff,'/api/desktop?from='+day(30)+'&to='+day(50))).data;
+      assert.ok(data.state.bookings.some(b=>b.date===day(0)&&b.team==='Replacement'));
+    });
     await t.test('health and events authenticate without constructing application workspaces',async()=>{
       for(const path of ['/api/health','/api/public/events']){const {response}=await call(client(),path,'GET',undefined,path.endsWith('events')?204:200);assert.doesNotMatch(response.headers.get('Server-Timing'),/hydrate/);}
     });

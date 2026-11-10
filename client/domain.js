@@ -1,3 +1,4 @@
+import { occupiedOnDay } from './occupancy.js';
 import { END_HOUR, NEUTRAL_TINT, PITCH_DEFAULT_HEX, PITCHES, START_HOUR } from './constants.js';
 import { dateForAddress, hourRng12, hours, isoDate, nowMin, rng12, t12, TODAY, weekStartAt } from './datetime.js';
 import { S } from './state.js';
@@ -54,8 +55,10 @@ export const tintFor = pitch => S.showPitchColors ? buildTint(pitchColorFor(pitc
 export const tintVars = tint => `--tint-bg:${tint.bg};--tint-line:${tint.line};--tint-fg:${tint.fg};`
   + `--tint-soft:${tint.soft};--tint-chip:${tint.chip};--tint-chip-fg:${tint.chipFg}`;
 
-export const overlaps = (record, date, pitch, start, end) => record.date === date && record.pitch === pitch
-  && record.start < end && record.end > start;
+export const overlaps = (record,date,pitch,start,end) => {
+  const window=occupiedOnDay(record,date);
+  return record.pitch===pitch&&window&&window.start<end&&window.end>start;
+};
 export const bookingAt = (di, hi, pitch, week = S.weekOffset) => {
   const start = hours()[hi] * 60;
   return bookingAtTime(di, pitch, start, start + 60, week);
@@ -100,8 +103,9 @@ export function coverage(pitch, di, hour, week = S.weekOffset){
   let startFraction = 1, endFraction = 0, hit = null;
   const date = dateForAddress(week, di);
   for (const booking of S.bookings){
-    if (booking.pitch !== pitch || booking.date !== date || ['noshow','cancelled'].includes(booking.status)) continue;
-    const start = Math.max(booking.start, hour * 60), end = Math.min(booking.end, (hour + 1) * 60);
+    if (booking.pitch !== pitch || ['noshow','cancelled'].includes(booking.status)) continue;
+    const occupied=occupiedOnDay(booking,date);if(!occupied)continue;
+    const start = Math.max(occupied.start, hour * 60), end = Math.min(occupied.end, (hour + 1) * 60);
     if (end > start){
       startFraction = Math.min(startFraction, (start - hour * 60) / 60);
       endFraction = Math.max(endFraction, (end - hour * 60) / 60);

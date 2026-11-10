@@ -1,7 +1,7 @@
 import { END_HOUR, PITCHES, START_HOUR } from './constants.js';
 import { dateForAddress, dayOffsetOf, hourRng12, hours, nowMin, rng12, toMin } from './datetime.js';
 import { blockAtTime, bookingAtTime, bookingById, bookingWindow, clampTimerAt, goToDayOffset, holdAtTime, inPersonRef, sessionById, statusAtTime, validContact } from './domain.js';
-import { apiRequest, loadState, mutate, refreshOperationalState } from './api.js';
+import { apiRequest, loadState, mutate, refreshOperationalState, signOut } from './api.js';
 import { applyTheme, blankForm, can, S, savePrefs } from './state.js';
 import { dateAddress, groupValid } from './views/availability.js';
 import { captureBoard, render } from './render.js';
@@ -119,6 +119,7 @@ async function addGroup(){
   S.pitch=S.gPitch;S.weekOffset=first.week;S.dayIndex=first.di;S.availMode='day';
   S.sel={di:first.di,hi:Math.floor(start/60)-START_HOUR};S.groupOpen=false;S.gDates=[];S.gName='';S.gPhone='';S.gNotes='';
   S.gColor=null;S.gDiscount=0;
+  render();await refreshOperationalState({force:true});
 }
 
 let holdInterval=null,holdStartedAt=0;
@@ -173,17 +174,19 @@ function exportAccounts(){
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
+function clearCalendarPanels(){S.sel=null;S.customOpen=false;S.groupOpen=false;S.blockOpen=false;S.confirm=null;S.blockDetail=null;}
+
 async function handleClick(event){
   const target=event.target.closest('[data-act]');
   if(!target)return;
   const action=target.dataset.act,value=target.dataset.v,id=target.dataset.id||null;
   const session=id!=null?sessionById(id):null;
   switch(action){
-    case 'goto':S.view=value;break;
+    case 'goto':S.view=value;clearCalendarPanels();break;
+    case 'retry-load':render();await refreshOperationalState({force:true});break;
     case 'dismiss-error':S.apiError='';break;
     case 'logout':
-      try{await apiRequest('/api/auth/logout',{method:'POST',body:{}});}catch(_){}
-      S.user=null;S.csrf='';S.bookings=[];S.holds=[];S.blocks=[];break;
+      await signOut();break;
     case 'create-user':{const result=await mutate('/api/users',{name:S.newName,email:S.newEmail,password:S.newPassword,role:S.newRole});
       if(result){S.newName='';S.newEmail='';S.newPassword='';S.newRole='operator';}break;}
     case 'save-deposit':{const depositAmount=Number(S.depositDraft);if(S.depositDraft===''||!Number.isInteger(depositAmount)||depositAmount<0||depositAmount>50000)return;
@@ -191,9 +194,9 @@ async function handleClick(event){
     case 'toggle-pitch-colors':S.showPitchColors=!S.showPitchColors;if(!S.showPitchColors)S.colorPickerOpen=null;savePrefs();break;
     case 'toggle-pitch-picker':{const pitch=+target.dataset.pi;S.colorPickerOpen=S.colorPickerOpen===pitch?null:pitch;break;}
     case 'set-pitch-color':S.pitchColors[+target.dataset.pi]=value;S.colorPickerOpen=null;savePrefs();break;
-    case 'pitch':S.pitch=+value;S.sel=null;break;
-    case 'week':S.weekOffset+=+value;S.sel=null;await refreshOperationalState();break;
-    case 'avail-mode':S.availMode=value;S.sel=null;savePrefs();break;
+    case 'pitch':S.pitch=+value;clearCalendarPanels();break;
+    case 'week':S.weekOffset+=+value;clearCalendarPanels();render();await refreshOperationalState();break;
+    case 'avail-mode':S.availMode=value;clearCalendarPanels();savePrefs();break;
     /* Two buttons drive this, so it sets from the value it is given and only
        falls back to a flip when something calls it without one. */
     case 'avail-dense':{const next=value?value==='compact':!S.dense;
@@ -239,10 +242,10 @@ async function handleClick(event){
       S.advVal='';S.advCash='';S.advUpi='';S.advReason='';break;}
     case 'sessions-mode':S.sessionsMode=value;S.focusSession=null;break;
     case 'toggle-band':if(S.collapsedBands[value])delete S.collapsedBands[value];else S.collapsedBands[value]=true;savePrefs();break;
-    case 'day-focus':S.dayIndex=+value;S.availMode='day';S.sel=null;break;
-    case 'day-jump':goToDayOffset(+value);await refreshOperationalState();break;
+    case 'day-focus':S.dayIndex=+value;S.availMode='day';clearCalendarPanels();break;
+    case 'day-jump':goToDayOffset(+value);clearCalendarPanels();render();await refreshOperationalState();break;
     case 'day':{const next=S.dayIndex+(+value);if(next<0){S.dayIndex=6;S.weekOffset-=1;}else if(next>6){S.dayIndex=0;S.weekOffset+=1;}
-      else S.dayIndex=next;S.sel=null;await refreshOperationalState();break;}
+      else S.dayIndex=next;clearCalendarPanels();render();await refreshOperationalState();break;}
     case 'slot':select(+target.dataset.di,+target.dataset.hi,+target.dataset.pi,+(target.dataset.offset || 0));break;
     case 'clear-sel':S.sel=null;S.formOpen=false;S.form=blankForm();break;
     case 'sel-primary':{const start=selectedStart(),status=statusAtTime(S.sel.di,S.pitch,start),hour=hours()[S.sel.hi];
@@ -401,8 +404,10 @@ async function handleInput(event){
     case 'c-start':S.cStart=target.value;render();break;
     case 'g-field':S[target.dataset.k]=target.value;refreshGate();break;
     case 'g-start':S.gStart=target.value;render();break;
-    case 'day-date':{const [year,month,day]=target.value.split('-').map(Number);if(year&&month&&day){goToDayOffset(dayOffsetOf(new Date(year,month-1,day)));
-      await refreshOperationalState();render();}break;}
+    case 'day-date':{if(!/^\d{4}-\d{2}-\d{2}$/.test(target.value))break;
+      const [year,month,day]=target.value.split('-').map(Number),date=new Date(year,month-1,day);
+      if(date.getFullYear()!==year||date.getMonth()!==month-1||date.getDate()!==day)break;
+      goToDayOffset(dayOffsetOf(date));clearCalendarPanels();render();await refreshOperationalState();render();break;}
     case 'adv-val':S.advVal=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advVal)target.value=S.advVal;render();break;
     case 'adv-cash':S.advCash=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advCash)target.value=S.advCash;render();break;
     case 'adv-upi':S.advUpi=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advUpi)target.value=S.advUpi;render();break;

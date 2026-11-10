@@ -302,7 +302,7 @@ function desktopPayload(req,url){
     const row=requireUser(req),user=actor(row);
     const auth={user:publicActor(row),csrfToken:row.csrf_token};
     if(row.must_change_password)return auth;
-    const state=store.listState(url.searchParams.get('from'),url.searchParams.get('to'));
+    const state=store.listState(url.searchParams.get('from'),url.searchParams.get('to'),url.searchParams.get('groupRange')==='1'?90:63);
     const today=new Intl.DateTimeFormat('en-CA',{timeZone:env.TURF_TIME_ZONE||'Asia/Kolkata'}).format(new Date());
     if(today<url.searchParams.get('from')||today>url.searchParams.get('to')){
       const current=store.listState(today,today);

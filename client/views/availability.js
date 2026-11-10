@@ -1,3 +1,4 @@
+import { occupiedOnDay } from '../occupancy.js';
 import { DOW, DOWL, END_HOUR, GROUP_DISCOUNTS, MON, PAY_FORM, PITCHES, PITCH_PALETTE, START_HOUR } from '../constants.js';
 import { clock12, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, minuteAt, relDay, rng12, slotRng12, t12,
   TODAY_DI, toMin } from '../datetime.js';
@@ -96,8 +97,10 @@ function slotHtml(di, hi, hour, pitch = S.pitch){
    interpreted, and it costs no height. */
 function hourFill(di, pitch, hour){
   const date = dateForAddress(S.weekOffset, di), start = hour * 60, end = start + 60;
-  const hit = (record, kind) => record.date === date && record.pitch === pitch
-    && record.start < end && record.end > start ? { kind, record } : null;
+  const hit=(record,kind)=>{
+    const occupied=occupiedOnDay(record,date);
+    return record.pitch===pitch&&occupied&&occupied.start<end&&occupied.end>start?{kind,record:{...record,...occupied}}:null;
+  };
   const items = [
     ...S.bookings.filter(b => b.status !== 'noshow' && b.status !== 'cancelled').map(b => hit(b, 'booked')),
     ...S.holds.filter(h => h.expiresAt > Date.now()).map(h => hit(h, 'hold')),
@@ -111,7 +114,7 @@ function hourFill(di, pitch, hour){
     const from = Math.max(record.start, start), to = Math.min(record.end, end);
     if (to > cursor){ taken += to - Math.max(from, cursor); cursor = Math.max(cursor, to); }
   }
-  return { items, freeMin:60 - taken };
+  return { items, freeMin:Math.floor(60 - taken) };
 }
 
 function denseCellHtml(di, pitch, hour){
@@ -425,16 +428,16 @@ function scheduleHtml(di, showNow){
   const date = dateForAddress(S.weekOffset, di), rows = hours().length * 2, pieces = [];
   const records = [];
   PITCHES.forEach((_, pitch) => {
-    S.bookings.filter(booking => booking.date === date && booking.pitch === pitch
-      && booking.status !== 'noshow' && booking.status !== 'cancelled' && booking.end > startMin && booking.start < endMin)
-      .forEach(booking => records.push({ type:'booking', pitch, record:booking }));
+    S.bookings.filter(booking=>booking.pitch===pitch&&!['noshow','cancelled'].includes(booking.status))
+      .forEach(booking=>{const occupied=occupiedOnDay(booking,date);if(occupied&&occupied.end>startMin&&occupied.start<endMin)records.push({type:'booking',pitch,record:booking,draw:occupied});});
     S.holds.filter(hold => hold.expiresAt > Date.now() && hold.date === date && hold.pitch === pitch
       && hold.end > startMin && hold.start < endMin)
       .forEach(hold => records.push({ type:'hold', pitch, record:hold }));
     S.blocks.filter(block => block.date === date && block.pitch === pitch && block.end > startMin && block.start < endMin)
       .forEach(block => records.push({ type:'blocked', pitch, record:block }));
   });
-  records.sort((a, b) => a.record.start - b.record.start || a.pitch - b.pitch);
+  const draw=item=>item.draw||item.record;
+  records.sort((a,b)=>draw(a).start-draw(b).start||a.pitch-b.pitch);
 
   /* Records on one pitch should never overlap — the server refuses to write a
      booking over another. Should one ever appear anyway (a direct write, a
@@ -448,8 +451,8 @@ function scheduleHtml(di, showNow){
     const laneEnds = [];
     mine.forEach(item => {
       let lane = 0;
-      while (laneEnds[lane] != null && laneEnds[lane] > item.record.start) lane++;
-      laneEnds[lane] = item.record.end;
+      while (laneEnds[lane] != null && laneEnds[lane] > draw(item).start) lane++;
+      laneEnds[lane] = draw(item).end;
       laneOf.set(item, lane);
     });
     /* Everything in one run of overlaps shares a lane count, so a run reads as
@@ -462,13 +465,13 @@ function scheduleHtml(di, showNow){
       run = [];
     };
     mine.forEach(item => {
-      if (run.length && item.record.start >= edge) close();
-      run.push(item); edge = Math.max(edge, item.record.end);
+      if (run.length && draw(item).start >= edge) close();
+      run.push(item); edge = Math.max(edge, draw(item).end);
     });
     close();
   });
   records.forEach(item => {
-    const record = item.record, start = clamp(record.start, startMin, endMin), end = clamp(record.end, startMin, endMin);
+    const record=item.record,start=clamp(draw(item).start,startMin,endMin),end=clamp(draw(item).end,startMin,endMin);
     const selected = !!(S.sel && S.sel.di === di && S.pitch === item.pitch
       && hours()[S.sel.hi] * 60 + S.startOffset >= start && hours()[S.sel.hi] * 60 + S.startOffset < end);
     const cls = item.type === 'booking' ? bookingClass(record) : bubble(item.type, null, false, false, true);
@@ -498,7 +501,7 @@ function scheduleHtml(di, showNow){
     const selectedStart = S.sel && S.sel.di === di && S.pitch === pitch
       ? hours()[S.sel.hi] * 60 + S.startOffset : -1;
     const taken = records.filter(item => item.pitch === pitch)
-      .map(item => [clamp(item.record.start, startMin, endMin), clamp(item.record.end, startMin, endMin)])
+      .map(item => [clamp(Math.floor(draw(item).start/30)*30,startMin,endMin),clamp(Math.ceil(draw(item).end/30)*30,startMin,endMin)])
       .sort((a, b) => a[0] - b[0]);
     const merged = [];
     for (const window of taken){
@@ -745,7 +748,7 @@ const groupDateOptions = () => {
   const base = daysFromToday(S.weekOffset,S.dayIndex);
   return Array.from({length:S.gRange},(_,index) => {
     const offset = base + index, address = dateAddress(offset), date = dateAt(offset);
-    return { offset,...address,date,check:bookingWindowAt(address.week,address.di,S.gPitch,toMin(S.gStart),S.gDur) };
+    return {offset,...address,date,check:S.dataReady===false?{ok:false,reason:S.dataError?'Availability could not load. Retry.':'Checking availability…'}:bookingWindowAt(address.week,address.di,S.gPitch,toMin(S.gStart),S.gDur)};
   });
 };
 const groupChecks = () => S.gDates.map(offset => {
@@ -754,7 +757,7 @@ const groupChecks = () => S.gDates.map(offset => {
 });
 export const groupValid = () => {
   const checks = groupChecks();
-  return !!(S.gName.trim() && validContact(S.gPhone) && checks.length && checks.every(item => item.check.ok));
+  return !!(S.dataReady!==false && S.gName.trim() && validContact(S.gPhone) && checks.length && checks.every(item => item.check.ok));
 };
 
 function groupPanelHtml(){
@@ -861,7 +864,7 @@ export function viewAvailability(){
       <div class="track"><div class="fill" style="${hbar(percent)}"></div></div></div>`;}).join('');
   const loadCap=isDay?`Pitch load, ${DOW[di]} ${dayDate.getDate()}`:'Pitch load, this week';
   const asidePanel=!!(S.sel||S.customOpen||S.groupOpen);
-  const asideBody=S.groupOpen?groupPanelHtml():S.customOpen?customPanelHtml():S.sel?selectionHtml()
+  const asideBody=S.groupOpen?groupPanelHtml():S.customOpen?customPanelHtml():S.sel&&S.dataReady!==false?selectionHtml()
     :'<div class="noselect"><b>No slot selected</b><p>Tap a time bubble to see the booking, confirm a hold, or block the slot for maintenance.</p></div>';
   /* One bar carries the whole board: where you are in time on the left, the days
      you can jump to in the middle, and what shape the board takes on the right.
@@ -875,7 +878,7 @@ export function viewAvailability(){
     <input type="date" value="${isoDate(dayDate)}" data-act="day-date" aria-label="Jump to date"></label>
     <button class="rbtn round" data-act="day" data-v="1" aria-label="Next day">&#8594;</button>`;
   const weekLead = `<button class="rbtn round" data-act="week" data-v="-1" aria-label="Previous week">&#8592;</button>
-    <span class="daypill is-static"><span class="daypill-ico">${CAL_ICON}</span><span class="daypill-txt"><b>This week</b>
+    <span class="daypill is-static"><span class="daypill-ico">${CAL_ICON}</span><span class="daypill-txt"><b>${S.weekOffset===0?'This week':S.weekOffset===1?'Next week':S.weekOffset===-1?'Last week':'Selected week'}</b>
     <span>${weekLabel}</span></span></span>
     <button class="rbtn round" data-act="week" data-v="1" aria-label="Next week">&#8594;</button>`;
   const dayChips = isDay ? `<div class="dayjump">${jumps.map(jump=>`<button class="jchip${jump.on?' on':''}"
@@ -893,8 +896,8 @@ export function viewAvailability(){
     ${iconOpt('avail-mode','week',!isDay,'week','One pitch')}</div>${densitySeg}
     <button class="pillbtn secondary" data-act="open-group">+ Group</button>
     <button class="pillbtn" data-act="open-custom">+ Custom<span class="pill-long"> time slot</span></button></div></div>
-    ${isDay?dayGrid:weekGrid}</section><aside class="aside${asidePanel?' has-panel':''}" data-scroll-pane="aside">${asideBody}
-    <div class="loadcard"><div class="cap">${loadCap}</div>${pitchLoad}</div>
-    <p class="asidenote">${CAL_ICON}<span>${isDay?dayFree+' of '+dayTotal+' slots open on '+DOW[di]+' '+dayDate.getDate()
+    ${S.dataReady===false?`<div class="empty" role="status">${S.dataError?'Availability could not load. <button class="dbtn" data-act="retry-load">Retry</button>':'Loading availability…'}</div>`:isDay?dayGrid:weekGrid}</section><aside class="aside${asidePanel?' has-panel':''}" data-scroll-pane="aside">${asideBody}
+    <div class="loadcard"><div class="cap">${loadCap}</div>${S.dataReady===false?'Checking availability…':pitchLoad}</div>
+    <p class="asidenote">${CAL_ICON}<span>${S.dataReady===false?'Availability not loaded':isDay?dayFree+' of '+dayTotal+' slots open on '+DOW[di]+' '+dayDate.getDate()
       :free+' of '+total+' slots open this week'} &middot; all times local</span></p></aside></main>`;
 }

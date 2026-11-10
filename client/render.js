@@ -1,7 +1,7 @@
 import { DOW, MON } from './constants.js';
 import { isoDate, nowMin, t12, TODAY, TODAY_DI } from './datetime.js';
 import { chipCls, esc, sessionsToday } from './domain.js';
-import { refreshOperationalState, loginHtml, passwordChangeHtml } from './api.js';
+import { refreshOperationalState, loginHtml, passwordChangeHtml, ensureViewData, stateReady } from './api.js';
 import { S, staffInitials } from './state.js';
 import { modalsHtml } from './modals.js';
 import { viewAccounts } from './views/accounts.js';
@@ -89,34 +89,28 @@ function playBoard(){
   });
 }
 
-let loadedView=null;
 export function render(){
-  const viewKey=S.user?S.user.id+':'+S.view:null;
-  if(viewKey!==loadedView){
-    loadedView=viewKey;
-    if(S.user&&!S.user.mustChangePassword&&['accounts','settings'].includes(S.view)){
-      S.viewLoading=S.view;
-      refreshOperationalState().finally(()=>{if(loadedView===viewKey)S.viewLoading=false;render();});
-    }
-  }
+  ensureViewData(render);
+  S.dataReady=stateReady();
   const active=document.activeElement;
   let caret=null;
   try{caret=active?[active.selectionStart,active.selectionEnd]:null;}catch(_){}
-  const keep=active&&active.id?{id:active.id,caret}:null;
+  const keep=active&&(active.id||active.dataset?.act)?{id:active.id,act:active.dataset?.act,k:active.dataset?.k,tag:active.tagName,caret}:null;
   const scrolls=SCROLL_PANES.map(id=>{const element=scrollPane(id);return element?{id,top:element.scrollTop,left:element.scrollLeft}:null;}).filter(Boolean);
   renderTopbar();
+  document.getElementById('topbar').inert=false;document.getElementById('view').inert=false;
   if(!S.user){document.getElementById('view').innerHTML=loginHtml();document.getElementById('modals').innerHTML='';return;}
   if(S.user.mustChangePassword){document.getElementById('view').innerHTML=passwordChangeHtml();document.getElementById('modals').innerHTML='';return;}
   const error=S.apiError?`<div class="error-banner app-error" role="alert"><span>${esc(S.apiError)}</span>
     <button data-act="dismiss-error" aria-label="Dismiss">&times;</button></div>`:'';
-  document.getElementById('view').innerHTML=error+(S.viewLoading===S.view?'<div class="empty" role="status">Loading '+(S.view==='accounts'?'accounts':'settings')+'…</div>':VIEWS[S.view]());
+  document.getElementById('view').innerHTML=error+(!S.dataReady&&S.view!=='availability'?'<main class="empty" role="status">'+(S.dataError?'This view could not load. <button class="dbtn" data-act="retry-load">Retry</button>':'Loading '+S.view+'…')+'</main>':VIEWS[S.view]());
   const modalRoot=document.getElementById('modals'),hadModal=!!modalRoot.querySelector('[role="dialog"]');
   modalRoot.innerHTML=modalsHtml();
   const dialog=modalRoot.querySelector('[role="dialog"]'),blocked=!!dialog;
   document.getElementById('topbar').inert=blocked;document.getElementById('view').inert=blocked;
   if(dialog&&!hadModal)(dialog.querySelector('input,textarea,select,button')||dialog).focus();
   scrolls.forEach(scroll=>{const element=scrollPane(scroll.id);if(element){element.scrollTop=scroll.top;element.scrollLeft=scroll.left;}});
-  if(keep){const next=document.getElementById(keep.id);if(next){next.focus();if(keep.caret&&keep.caret[0]!=null){try{next.setSelectionRange(keep.caret[0],keep.caret[1]);}catch(_){}}}}
+  if(keep){const next=keep.id?document.getElementById(keep.id):Array.from(document.querySelectorAll('input[data-act],textarea[data-act],select[data-act]')).find(el=>el.dataset.act===keep.act&&el.dataset.k===keep.k&&el.tagName===keep.tag);if(next){next.focus();if(keep.caret&&keep.caret[0]!=null){try{next.setSelectionRange(keep.caret[0],keep.caret[1]);}catch(_){}}}}
   playBoard();
   syncStuck(false);
 }

@@ -27,7 +27,7 @@ const customerFiles = new Map([['/book/','index.html'],['/book/index.html','inde
   ['/book/privacy.html','privacy.html'],['/book/app.js','app.js'],['/book/art.js','art.js'],['/book/styles.css','styles.css']]);
 
 const clientModules = [
-  'actions.js', 'api.js', 'constants.js', 'datetime.js', 'domain.js', 'modals.js', 'render.js', 'state.js',
+  'occupancy.js', 'actions.js', 'api.js', 'constants.js', 'datetime.js', 'domain.js', 'modals.js', 'render.js', 'state.js',
   'views/accounts.js', 'views/alerts.js', 'views/availability.js', 'views/dashboard.js', 'views/sessions.js', 'views/settings.js',
 ];
 /* The phone app is a second front end over the same API, not a second product:

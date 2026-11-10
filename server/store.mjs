@@ -1,3 +1,4 @@
+import { occupiedWindow, occupiedOnDay } from '../client/occupancy.js';
 import { Buffer } from 'node:buffer';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
@@ -284,16 +285,19 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
   }
 
   function assertAvailable(window, { ignoreBookingId = null, ignoreHoldId = null } = {}){
-    const conflict = db.prepare(`SELECT id,team,start,end FROM bookings
-      WHERE date=? AND pitch=? AND status NOT IN ('cancelled','noshow') AND start<? AND end>?
-        AND (? IS NULL OR id<>?) LIMIT 1`).get(window.date, window.pitch, window.end, window.start, ignoreBookingId, ignoreBookingId);
-    if (conflict) fail(409, 'booking_conflict', 'This time overlaps another booking.', conflict);
-    const hold = db.prepare(`SELECT id,start,end FROM holds
-      WHERE date=? AND pitch=? AND expires_at>? AND start<? AND end>?
-        AND (? IS NULL OR id<>?) LIMIT 1`).get(window.date, window.pitch, nowMs(), window.end, window.start, ignoreHoldId, ignoreHoldId);
+    const conflict=db.prepare("SELECT * FROM bookings WHERE pitch=? AND status NOT IN ('cancelled','noshow') AND (? IS NULL OR id<>?)")
+      .all(window.pitch,ignoreBookingId,ignoreBookingId).find(row=>{
+        const occupied=occupiedWindow({...row,startedAt:row.started_at,pausedAt:row.paused_at,pausedMilliseconds:row.paused_milliseconds},window.date,nowMs(),timeZone);
+        return occupied.start<window.end&&occupied.end>window.start;
+      });
+    if(conflict)fail(409,'booking_conflict',`This time overlaps ${conflict.team}, including any remaining playing time.`,{id:conflict.id,start:conflict.start,end:conflict.end});
+    const hold = db.prepare(`SELECT id,date,start,end FROM holds
+      WHERE pitch=? AND expires_at>? AND (? IS NULL OR id<>?)`).all(window.pitch,nowMs(),ignoreHoldId,ignoreHoldId)
+      .find(row=>{const occupied=occupiedWindow(row,window.date);return occupied.start<window.end&&occupied.end>window.start;});
     if (hold) fail(409, 'hold_conflict', 'This time overlaps an active hold.', hold);
-    const block = db.prepare(`SELECT id,reason,start,end FROM blocks
-      WHERE date=? AND pitch=? AND active=1 AND start<? AND end>? LIMIT 1`).get(window.date, window.pitch, window.end, window.start);
+    const block = db.prepare(`SELECT id,date,reason,start,end FROM blocks
+      WHERE pitch=? AND active=1`).all(window.pitch)
+      .find(row=>{const occupied=occupiedWindow(row,window.date);return occupied.start<window.end&&occupied.end>window.start;});
     if (block) fail(409, 'maintenance_conflict', 'This time overlaps maintenance.', block);
   }
 
@@ -370,19 +374,20 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       fail(409, 'stale_booking', 'This booking changed on another console. Refresh and review the latest record before trying again.');
   }
 
-  function listState(from, to){
+  function listState(from, to, maxDays=63){
     if (!validDate(from) || !validDate(to) || from > to) fail(400, 'invalid_range', 'A valid from/to date range is required.');
-    if ((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / 86400000 > 62)
-      fail(400, 'range_too_large', 'State queries are limited to 63 days.');
+    if ((new Date(`${to}T00:00:00`) - new Date(`${from}T00:00:00`)) / 86400000 > maxDays-1)
+      fail(400, 'range_too_large', `State queries are limited to ${maxDays} days.`);
     deleteExpired();
-    const bookings = db.prepare(bookingSelect(`b.date BETWEEN ? AND ? AND b.status<>'cancelled'`) + ' ORDER BY b.date,b.start,b.pitch').all(from, to).map(shapeBooking);
+    const today=new Date(nowMs()).toLocaleDateString('en-CA',{timeZone});
+    const bookings = db.prepare(bookingSelect(`(b.date BETWEEN ? AND ? OR b.date=? OR b.status='running') AND b.status<>'cancelled'`) + ' ORDER BY b.date,b.start,b.pitch').all(from,to,today).map(shapeBooking);
     const holds = db.prepare(`SELECT h.*,u.name AS created_by_name FROM holds h JOIN users u ON u.id=h.created_by
-      WHERE h.date BETWEEN ? AND ? AND h.expires_at>? ORDER BY h.date,h.start`).all(from, to, nowMs()).map(row => ({
+      WHERE (h.date BETWEEN ? AND ? OR h.date=?) AND h.expires_at>? ORDER BY h.date,h.start`).all(from,to,today,nowMs()).map(row => ({
       id:row.id,date:row.date,pitch:row.pitch,start:row.start,end:row.end,team:row.team,contact:row.contact,
       notes:row.notes,pay:row.pay,expiresAt:row.expires_at,createdBy:row.created_by_name,
     }));
     const blocks = db.prepare(`SELECT b.*,u.name AS created_by_name FROM blocks b JOIN users u ON u.id=b.created_by
-      WHERE b.date BETWEEN ? AND ? AND b.active=1 ORDER BY b.date,b.start`).all(from, to).map(row => ({
+      WHERE (b.date BETWEEN ? AND ? OR b.date=?) AND b.active=1 ORDER BY b.date,b.start`).all(from,to,today).map(row => ({
       id:row.id,date:row.date,pitch:row.pitch,start:row.start,end:row.end,reason:row.reason,
       createdBy:row.created_by_name,createdAt:row.created_at,
     }));
@@ -594,14 +599,18 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
         fail(409, 'session_too_early', 'This session cannot start more than 15 minutes before its booked time.');
       if (!manual && status === 'running' && minute >= before.end)
         fail(409, 'session_elapsed', 'This booking has already ended. Resolve it as a no-show or ask a manager to correct its time.');
-      const started = status === 'running' ? minute : before.startedAt;
+      if(['upcoming','running'].includes(status)){
+        const next={...before,status,startedAt:status==='running'?minute:null,pausedAt:null,pausedMilliseconds:0};
+        assertAvailable({...before,...occupiedWindow(next,before.date,nowMs(),timeZone)},{ignoreBookingId:id});
+      }
+      const started = status === 'upcoming' ? null : status === 'running' ? minute : before.startedAt;
       /* A clock that stops before it started is a skew artefact, not something
          the counter needs to be argued with about — the operator has already
          decided the session is over, and refusing the end strands it running
          with no way to close it. The end is held at the start instead, so the
          session records as zero length and every duration downstream stays
          non-negative. */
-      const statedEnd = status === 'done' ? minute : before.endedAt;
+      const statedEnd = status === 'done' ? minute : ['upcoming','running'].includes(status)?null:before.endedAt;
       const ended = status === 'done' && started != null && statedEnd != null && statedEnd < started
         ? started : statedEnd;
       db.prepare(`UPDATE bookings SET status=?,started_at=?,ended_at=?,version=version+1,updated_at=? WHERE id=?`)
@@ -639,6 +648,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
         db.prepare('UPDATE bookings SET paused_at=?,version=version+1,updated_at=? WHERE id=?').run(nowMs(),isoNow(),id);
       }else{
         if(!before.pausedAt)return before;
+        assertAvailable({...before,...occupiedWindow(before,before.date,nowMs(),timeZone)},{ignoreBookingId:id});
         db.prepare('UPDATE bookings SET paused_at=NULL,paused_milliseconds=paused_milliseconds+?,version=version+1,updated_at=? WHERE id=?')
           .run(Math.max(0,nowMs()-before.pausedAt),isoNow(),id);
       }
@@ -654,7 +664,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       if (!before || !['upcoming','running'].includes(before.status)) fail(409, 'not_extendable', 'Only upcoming or running bookings can be extended.');
       assertVersion(before, expectedVersion);
       const window = validateWindow({ ...before, end:before.end + minutes });
-      assertAvailable(window, { ignoreBookingId:id });
+      assertAvailable({...window,...occupiedWindow({...before,end:window.end},before.date,nowMs(),timeZone)}, { ignoreBookingId:id });
       const total = priceFor(window);
       db.prepare(`UPDATE bookings SET end=?,total_amount=?,version=version+1,updated_at=? WHERE id=?`)
         .run(window.end,total,isoNow(),id);
@@ -813,6 +823,6 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
   return { db, close:() => db.close(), createUser, authenticate, createSession, sessionUser, deleteSession,
     deleteExpired, createBookings, getBooking, listState, listAccounts, createHold, confirmHold, releaseHold,
     createBlock, releaseBlock, releaseBooking, setStatus, checkIn, controlClock, extendBooking, recordPayment, recordRefund, listAudit,
-    getSettings, updateSettings, changePassword, listUsers, setUserActive, revokeUserSessions, recordAuthEvent,
+    occupiedOnDay:(booking,date)=>occupiedOnDay(booking,date,nowMs(),timeZone), getSettings, updateSettings, changePassword, listUsers, setUserActive, revokeUserSessions, recordAuthEvent,
     bootstrapFromEnv, requireRole };
 }
