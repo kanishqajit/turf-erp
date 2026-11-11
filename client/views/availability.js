@@ -317,7 +317,7 @@ const cta = (act, id, icon, label, cls = '', accessibleLabel = label) =>
 function liveActionHtml(live){
   if (!live) return '';
   if (live.mode === 'arriving')
-    return `<span class="ev-tray">${cta('check-in', live.id, 'check', 'Check in')}</span>`;
+    return `<span class="ev-tray">${cta('check-in', live.id, 'check', 'Check in','is-quiet')}${cta('start-on-board',live.id,'play','Start')}</span>`;
   if (live.mode === 'ready')
     return `<span class="ev-tray">${
       cta('undo-check-in', live.id, 'undo', 'Undo', 'is-quiet')}${

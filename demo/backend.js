@@ -223,7 +223,7 @@
   function stateBetween(from, to){
     const within = d => (!from || d >= from) && (!to || d <= to);
     return {
-      bookings:DB.bookings.filter(b => within(b.date)),
+      bookings:DB.bookings.filter(b => within(b.date)||b.status==='running'),
       holds:DB.holds.filter(h => within(h.date)
         && new Date(h.expiresAt).getTime() > Date.now()),
       blocks:DB.blocks.filter(b => within(b.date) && b.active),
@@ -236,7 +236,7 @@
 
   const real = window.fetch.bind(window);
 
-  window.fetch = function(input, init){
+  window.fetch = async function(input, init){
     const url = String(input && input.url ? input.url : input);
     const path = url.replace(/^https?:\/\/[^/]+/, '');
     if (!path.startsWith('/api/')) return real(input, init);
@@ -247,10 +247,25 @@
     const query = new URLSearchParams((path.split('?')[1] || ''));
     const route = path.split('?')[0];
 
-    try { return Promise.resolve(handle(route, method, body, query)); }
+    try {
+      const response=handle(route,method,body,query);
+      if(response.ok&&method==='POST'&&query.get('refresh')==='desktop'){
+        return ok({...await response.json(),desktop:desktop(query)});
+      }
+      return response;
+    }
     catch (error){ return Promise.resolve(bad(400, 'demo_error', error.message)); }
   };
 
+  function desktop(query){
+    const result={user:USER,csrfToken:'demo',state:stateBetween(query.get('from'),query.get('to'))};
+    if((query.get('include')||'').split(',').includes('accounts')){
+      const from=query.get('accountsFrom'),to=query.get('accountsTo');
+      result.accounts={bookings:DB.bookings.filter(b=>(!from||b.date>=from)&&(!to||b.date<=to)),payments:DB.payments};
+    }
+    return result;
+  }
+  const splitReceipts=new Map();
   function handle(route, method, body, query){
     /* — session — */
     if (route === '/api/auth/me') return ok({ user:USER, csrfToken:'demo' });
@@ -259,11 +274,12 @@
     if (route === '/api/health') return ok({ ok:true });
 
     /* — reads — */
+    if(route==='/api/desktop')return ok(desktop(query));
     if (route === '/api/state') return ok(stateBetween(query.get('from'), query.get('to')));
     if (route === '/api/accounts'){
       const from = query.get('from'), to = query.get('to');
       const within = d => (!from || d >= from) && (!to || d <= to);
-      return ok({ bookings:DB.bookings.filter(b => within(b.date)), payments:DB.payments });
+      return ok({ bookings:DB.bookings.filter(b => within(b.date)||b.status==='running'), payments:DB.payments });
     }
     if (route === '/api/audit') return ok({ events:[] });
     if (route === '/api/settings' && method === 'GET') return ok({ settings:DB.settings });
@@ -292,6 +308,31 @@
     }
 
     let m;
+    if((m=route.match(/^\/api\/bookings\/([^/]+)\/start$/))&&method==='POST'){
+      const b=byId(m[1]);if(!b)return bad(404,'not_found','Booking not found.');
+      if(b.version!==body.version)return bad(409,'stale_booking','The booking changed. Refresh and review it.');
+      if(b.status!=='upcoming')return bad(409,'not_startable','This game is no longer waiting to start.');
+      const at=body.atMinute==null?nowMin():Number(body.atMinute);
+      const plan=sessionStartPlan(b,{bookings:DB.bookings,holds:DB.holds,blocks:DB.blocks.filter(x=>x.active)},at,dateFor(0),nowMin());
+      if(!plan.ok)return bad(409,'booking_conflict',plan.reason);
+      if(plan.previous){
+        if(body.previous?.id!==plan.previous.id||body.previous?.version!==plan.previous.version)
+          return bad(409,'handover_changed','Confirm the previous game before handing over.');
+        Object.assign(plan.previous,{status:'done',endedAt:Math.round(nowMin()),pausedAt:null,checkedInAt:null});touch(plan.previous);
+      }
+      Object.assign(b,{status:'running',startedAt:at,endedAt:null,pausedAt:null,pausedMilliseconds:0,checkedInAt:null});
+      return ok({booking:touch(b)});
+    }
+    if((m=route.match(/^\/api\/bookings\/([^/]+)\/payments\/split$/))&&method==='POST'){
+      const b=byId(m[1]);if(!b)return bad(404,'not_found','Booking not found.');
+      const cash=Number(body.cashAmount),upi=Number(body.upiAmount),signature=JSON.stringify([b.id,cash,upi]);
+      const previous=splitReceipts.get(body.idempotencyKey);
+      if(previous)return previous===signature?ok({booking:b}):bad(409,'idempotency_conflict','This payment key belongs to another receipt.');
+      if(b.version!==body.version)return bad(409,'stale_booking','The booking changed. Refresh and review it.');
+      if(!(cash>0&&upi>0)||cash+upi>b.amount-(b.discount||0)-b.collected)return bad(400,'invalid_split','Check both shares against the outstanding amount.');
+      pay(b,cash,'Cash','');pay(b,upi,'UPI',body.reference);splitReceipts.set(body.idempotencyKey,signature);
+      return ok({booking:touch(b)});
+    }
     if ((m = route.match(/^\/api\/bookings\/([^/]+)\/status$/)) && method === 'POST'){
       const b = byId(m[1]);
       if (!b) return bad(404, 'not_found', 'Booking not found.');

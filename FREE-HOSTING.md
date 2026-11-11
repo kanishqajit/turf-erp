@@ -4,6 +4,24 @@ Cloudflare Pages serves desktop `/`, staff `/m`, and customer `/book/` at
 https://futly-prototype.pages.dev. The same-origin `/api/*` proxy calls the
 `futly-api` Supabase Edge Function; PostgreSQL is the durable ledger.
 
+## ERP operational flow
+
+Desktop and staff phone both use one authenticated `GET /api/desktop` for boot
+and a committed `desktop` payload on saves (`refresh=desktop`). The phone loads
+Accounts history only on Money. Polls run every ten seconds while the operational
+screen is idle; the phone also offers manual Refresh and shows its last sync age.
+Hosted updates still use polling; `/api/public/events` is only a live event stream
+on the local server.
+
+`POST /api/bookings/:id/start` accepts the target version, selected start minute,
+and optionally `previous: {id,version}`. Ending the previous running game and
+starting the target share one transaction and one cloud commit. A rejected start
+rolls back the previous end. Financial balances remain separate from handover.
+`POST /api/bookings/:id/payments/split` atomically records Cash and UPI legs with
+derived idempotency keys. Its first derived key is included in snapshot selection
+so replay and cross-booking key reuse checks also work with scoped snapshots.
+These changes reuse existing columns and require no new database migration.
+
 ## Architecture
 
 The customer app renders venues independently of guest-session creation and

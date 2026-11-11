@@ -1,3 +1,4 @@
+import { sessionStartPlan } from './session-start.js';
 import { occupiedOnDay } from './occupancy.js';
 import { END_HOUR, NEUTRAL_TINT, PITCH_DEFAULT_HEX, PITCHES, START_HOUR } from './constants.js';
 import { dateForAddress, hourRng12, hours, isoDate, nowMin, rng12, t12, TODAY, weekStartAt } from './datetime.js';
@@ -146,6 +147,11 @@ export const validContact = value => {
    end, and never later than now — a session cannot begin in the future. Both
    the dialog and the action clamp through this, so the buttons can never offer
    a minute the server will refuse. */
+export const startPlan = (session,at) => sessionStartPlan(session,S,at,isoDate(TODAY),nowMin());
+export const suggestedStart = session => {
+  const now=clampTimerAt(session,nowMin());
+  return startPlan(session,now).ok?now:clampTimerAt(session,session.start);
+};
 export const timerFloor = session => session.start - 15;
 export const timerCeil = session => Math.min(Math.floor(nowMin()), session.end - 1);
 export const clampTimerAt = (session, minute) =>

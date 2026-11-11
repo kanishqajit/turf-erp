@@ -258,6 +258,12 @@ async function dispatch(req, res, url){
   }
 
   let match;
+  if((match=routeMatch(path,/^\/api\/bookings\/([^/]+)\/start$/))&&req.method==='POST'){
+    return json(res,200,{booking:store.startSession(match[1],await readJson(req),user)});
+  }
+  if((match=routeMatch(path,/^\/api\/bookings\/([^/]+)\/payments\/split$/))&&req.method==='POST'){
+    return json(res,200,{booking:store.recordSplitPayment(match[1],await readJson(req),user)});
+  }
   if((match=routeMatch(path,/^\/api\/bookings\/([^/]+)\/check-in$/))&&req.method==='POST'){
     const body=await readJson(req);return json(res,200,{booking:store.checkIn(match[1],body.checked,user,body.version)});
   }

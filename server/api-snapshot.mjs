@@ -23,7 +23,7 @@ export function snapshotScope(url,method,body={},cookie='',ip='unknown'){
   return {kind,method,path,refresh:query.get('refresh')==='desktop',fullSessions:path.startsWith('/api/users')||path==='/api/auth/change-password',from:date(query.get('from')),to:date(query.get('to')),
     today:new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
     date:date(query.get('date')),dates:[...new Set([body.date,...(Array.isArray(body.bookings)?body.bookings.slice(0,31).map(b=>b?.date):[])].map(value=>date(String(value??'').trim().slice(0,10))).filter(Boolean))],
-    paymentKey:String(body.idempotencyKey||'').trim().slice(0,100),targetTable:match?.[1]||null,targetId:match?.[2]||null,
+    paymentKey:(path.endsWith('/payments/split')?String(body.idempotencyKey||'').trim().slice(0,70)+'-cash':String(body.idempotencyKey||'').trim()).slice(0,100),targetTable:match?.[1]||null,targetId:match?.[2]||null,
     accountsFrom:date(query.get(path==='/api/accounts'?'from':'accountsFrom')),
     accountsTo:date(query.get(path==='/api/accounts'?'to':'accountsTo')),
     accounts:path==='/api/accounts'||include.has('accounts'),

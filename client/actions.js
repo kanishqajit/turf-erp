@@ -1,6 +1,6 @@
 import { END_HOUR, PITCHES, START_HOUR } from './constants.js';
 import { TODAY, isoDate, dateForAddress, dayOffsetOf, hourRng12, hours, nowMin, rng12, toMin } from './datetime.js';
-import { blockAtTime, bookingAtTime, bookingById, bookingWindow, clampTimerAt, goToDayOffset, holdAtTime, inPersonRef, sessionById, statusAtTime, validContact } from './domain.js';
+import { blockAtTime, bookingAtTime, bookingById, bookingWindow, clampTimerAt, suggestedStart, startPlan, goToDayOffset, holdAtTime, inPersonRef, sessionById, statusAtTime, validContact } from './domain.js';
 import { apiRequest, loadState, mutate, refreshOperationalState, signOut } from './api.js';
 import { applyTheme, blankForm, can, S, savePrefs } from './state.js';
 import { dateAddress, groupValid } from './views/availability.js';
@@ -45,7 +45,7 @@ function askTimer(id){
   const session=sessionById(id);
   if(!session)return;
   S.timerAsk=id;
-  S.timerAt=clampTimerAt(session,nowMin());
+  S.timerAt=suggestedStart(session);
 }
 
 function pickPay(session,status){
@@ -63,9 +63,8 @@ function pickPay(session,status){
    totals right, which is what the till has to reconcile against and what caps a
    later refund to the mode it was taken in.
 
-   They go one at a time rather than together: the second carries the version the
-   first returned, so a stale-version rejection can still stop the pair halfway
-   rather than silently double-posting. */
+   Cash and UPI shares save atomically with one request identity. A retry after
+   a lost response replays both receipts without charging either share twice. */
 async function saveAdvance(){
   const session=sessionById(S.advAsk);
   if(!session)return;
@@ -77,6 +76,13 @@ async function saveAdvance(){
     : [{mode:S.advPayMode,amount:Math.max(0,parseInt(S.advVal,10)||0),
         reference:S.advPayMode==='Cash'?'':inPersonRef()}];
   if(!legs.length||legs.some(leg=>leg.amount<=0))return;
+  if(split&&legs.length===2){
+    const result=await mutate(`/api/bookings/${encodeURIComponent(session.id)}/payments/split`,{
+      cashAmount:legs[0].amount,upiAmount:legs[1].amount,reference:inPersonRef(),
+      settle:S.advMode==='settle',reason:S.advReason,idempotencyKey:pendingKey('payment',session.id),version:session.version});
+    if(result){clearPendingKey('payment',session.id);S.advAsk=null;S.advVal='';S.advReason='';S.advCash='';S.advUpi='';}
+    return;
+  }
   let version=session.version,ok=true;
   for(let index=0;index<legs.length&&ok;index++){
     const leg=legs[index];
@@ -334,8 +340,10 @@ async function handleClick(event){
     case 'timer-nudge':{const current=sessionById(S.timerAsk);if(!current)break;
       S.timerAt=clampTimerAt(current,S.timerAt+(+value));break;}
     case 'timer-start':{const current=sessionById(S.timerAsk);if(!current)break;
-      const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
-        {status:'running',version:current.version,atMinute:clampTimerAt(current,S.timerAt)});
+      const atMinute=clampTimerAt(current,S.timerAt),plan=startPlan(current,atMinute);
+      if(!plan.ok){S.apiError=plan.reason;break;}
+      const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/start`,
+        {version:current.version,atMinute,previous:plan.previous?{id:plan.previous.id,version:plan.previous.version}:undefined});
       if(result){S.timerAsk=null;S.timerAt=null;}break;}
     case 'done-cancel':S.doneAsk=null;break;
     case 'done-confirm':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,

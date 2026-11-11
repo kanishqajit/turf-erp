@@ -217,10 +217,13 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
   db.prepare(`INSERT OR IGNORE INTO venue_settings (key,value_integer,updated_by,updated_at)
     VALUES ('deposit_amount',500,NULL,?)`).run(isoNow());
 
+  let transactionDepth=0;
   const tx = fn => {
-    db.exec('BEGIN IMMEDIATE');
-    try { const value = fn(); db.exec('COMMIT'); return value; }
-    catch (error){ db.exec('ROLLBACK'); throw error; }
+    const depth=transactionDepth++,savepoint='turf_write_'+depth;
+    db.exec(depth?'SAVEPOINT '+savepoint:'BEGIN IMMEDIATE');
+    try { const value=fn();db.exec(depth?'RELEASE '+savepoint:'COMMIT');return value; }
+    catch(error){db.exec(depth?'ROLLBACK TO '+savepoint:'ROLLBACK');if(depth)db.exec('RELEASE '+savepoint);throw error;}
+    finally{transactionDepth--;}
   };
   const audit = (actor, action, entityType, entityId, before, after, reason = '') => {
     db.prepare(`INSERT INTO audit_events
@@ -629,6 +632,26 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
     });
   }
 
+  function startSession(id,input,actor){
+    requireRole(actor,'operator');
+    if(!Number.isInteger(input.version)||(input.previous&&!Number.isInteger(input.previous.version)))
+      fail(400,'version_required','Refresh the board before starting or handing over a game.');
+    return tx(()=>{
+      const booking=getBooking(id);
+      if(!booking)fail(404,'not_found','Booking not found.');
+      assertVersion(booking,input.version);
+      if(booking.status!=='upcoming')fail(409,'not_startable','This game is no longer waiting to start. Refresh and review it.');
+      if(input.previous){
+        const previous=getBooking(input.previous.id);
+        if(!previous||previous.id===id||previous.pitch!==booking.pitch||previous.status!=='running')
+          fail(409,'handover_changed','The previous game changed. Refresh before handing over.');
+        assertVersion(previous,input.previous.version);
+        setStatus(previous.id,'done',actor,'Pitch handover',null,previous.version);
+      }
+      return setStatus(id,'running',actor,'',input.atMinute,input.version);
+    });
+  }
+
   function checkIn(id, checked, actor, expectedVersion){
     requireRole(actor,'operator');
     if(typeof checked!=='boolean')fail(400,'invalid_check_in','Supply a check-in state.');
@@ -714,6 +737,19 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       const after = getBooking(id);
       audit(actor, settle ? 'payment.settled' : 'payment.recorded', 'booking', id, before, after, reason);
       return after;
+    });
+  }
+
+  function recordSplitPayment(id,input,actor){
+    requireRole(actor,'operator');
+    const key=clean(input.idempotencyKey,70),cash=Number(input.cashAmount),upi=Number(input.upiAmount);
+    if(key.length<12||!Number.isInteger(cash)||!Number.isInteger(upi)||cash<=0||upi<=0)
+      fail(400,'invalid_split','Enter positive cash and UPI amounts and a payment request key.');
+    return tx(()=>{
+      recordPayment(id,{amount:cash,mode:'Cash',idempotencyKey:key+'-cash',version:input.version},actor);
+      const booking=getBooking(id);
+      return recordPayment(id,{amount:upi,mode:'UPI',reference:input.reference,idempotencyKey:key+'-upi',
+        version:booking.version,settle:input.settle,reason:input.reason},actor);
     });
   }
 
@@ -827,7 +863,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
 
   return { db, close:() => db.close(), createUser, authenticate, createSession, sessionUser, deleteSession,
     deleteExpired, createBookings, getBooking, listState, listAccounts, createHold, confirmHold, releaseHold,
-    createBlock, releaseBlock, releaseBooking, setStatus, checkIn, controlClock, extendBooking, recordPayment, recordRefund, listAudit,
+    createBlock, releaseBlock, releaseBooking, setStatus, startSession, checkIn, controlClock, extendBooking, recordPayment, recordSplitPayment, recordRefund, listAudit,
     occupiedOnDay:(booking,date)=>occupiedOnDay(booking,date,nowMs(),timeZone), getSettings, updateSettings, changePassword, listUsers, setUserActive, revokeUserSessions, recordAuthEvent,
     bootstrapFromEnv, requireRole };
 }

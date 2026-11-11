@@ -18,18 +18,22 @@
    reminder list.
 
    Same conventions as the console (app.js): one state
-   object, full re-render, delegated events, mock data.
+   object, delegated events, and the shared operating ledger.
    ═══════════════════════════════════════════════════════ */
+
+import { sessionStartPlan } from './client/session-start.js';
+import { occupiedOnDay } from './client/occupancy.js';
 
 /* ─── the API ─────────────────────────────────────────── */
 /* This app is a second front end over the console's server, not a second copy
    of the turf. There is no mock data left in it: the board is drawn from
-   /api/state, every button posts to the same audited endpoints the counter
+   /api/desktop, every button posts to the same audited endpoints the counter
    posts to, and the session cookie is the console's — which is why the server
    serves this file itself. Open it on another origin and the cookie
    (HttpOnly, SameSite=Strict) never arrives. */
 
 async function apiRequest(path, { method = 'GET', body } = {}){
+  const requestUser=S.user;
   const headers = { Accept:'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (!['GET','HEAD'].includes(method) && S.csrf) headers['X-CSRF-Token'] = S.csrf;
@@ -37,12 +41,12 @@ async function apiRequest(path, { method = 'GET', body } = {}){
     body:body === undefined ? undefined : JSON.stringify(body) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok){
-    if (response.status === 401){ S.user = null; S.csrf = ''; }
+    if (response.status === 401&&S.user===requestUser){ S.user = null; S.csrf = ''; }
     const gone = path.startsWith('/api/') && [404, 405, 501].includes(response.status);
     const error = new Error(data.error?.message || (gone
       ? 'The Turf Operations API is not running at this address.'
       : 'Request failed (' + response.status + ').'));
-    error.code = data.error?.code;
+    error.code = data.error?.code;error.status=response.status;
     throw error;
   }
   return data;
@@ -118,7 +122,7 @@ const blankForm = () => ({ team:'', contact:'', pay:'Payment at venue' });
 
 const S = {
   /* session */
-  ready:false, user:null, csrf:'', authError:'', apiError:'', busy:false, syncedAt:0,
+  ready:false, user:null, csrf:'', authError:'', apiError:'', busy:false, syncedAt:0, pendingKeys:{},
   /* server records */
   bookings:[], holds:[], blocks:[], payments:[], accounts:[], settings:{ depositAmount:500 },
   /* screens */
@@ -242,7 +246,7 @@ const priceFor = (pi, start, end) => Math.round(
 /* Statuses a booking has exited through: no slot held, no money owed. */
 const GONE = new Set(['noshow', 'cancelled']);
 
-const sess = () => S.bookings.filter(b => b.date === todayIso());
+const sess = () => S.bookings.filter(b => b.date === todayIso()||b.status==='running');
 /* The accounts worklist reaches weeks back, so a row there may not be one of
    the days the board loaded. */
 const sessById = id => S.bookings.find(b => b.id === id) || S.accounts.find(b => b.id === id);
@@ -269,10 +273,11 @@ function takings(){
    live hold, or a maintenance block, in that order of precedence — the same
    order the server enforces when it refuses a double sale. */
 const overlaps = (r, a, b) => r.start < b && r.end > a;
-function cellAt(date, pitch, hi){
-  const h = hours()[hi], a = h * 60, b = a + 60;
-  const booking = S.bookings.find(x => x.date === date && x.pitch === pitch
-    && !GONE.has(x.status) && overlaps(x, a, b));
+function cellAt(date,pitch,hi,a=hours()[hi]*60,b=a+60){
+  const booking = S.bookings.slice().sort((x,y)=>(x.date!==date)-(y.date!==date)).find(x=>{
+    const occupied=occupiedOnDay(x,date);
+    return x.date===date&&x.pitch===pitch&&!GONE.has(x.status)&&occupied&&overlaps(occupied,a,b);
+  });
   if (booking) return { st:'booked', booking };
   const hold = S.holds.find(x => x.date === date && x.pitch === pitch && overlaps(x, a, b));
   if (hold) return { st:'hold', hold };
@@ -283,10 +288,25 @@ function cellAt(date, pitch, hi){
 const cellState = (date, hi, pi) => cellAt(date, pi, hi).st;
 /* The window a cell really holds — a walk-in taken at the gate can sit on an
    odd one, and the cell should say so rather than round it to a tidy hour. */
-function cellRange(date, pitch, hi){
-  const c = cellAt(date, pitch, hi), r = c.booking || c.hold || c.block;
-  const h = hours()[hi];
-  return r ? [r.start, r.end] : [h * 60, (h + 1) * 60];
+function cellRange(date,pitch,hi,a=hours()[hi]*60,b=a+60){
+  const c=cellAt(date,pitch,hi,a,b),r=c.booking||c.hold||c.block;
+  return r?[r.start,r.end]:[a,b];
+}
+function cellSegments(date,pitch,hi){
+  const a=hours()[hi]*60,b=a+60,edges=new Set([a,b]);
+  for(const record of [...S.bookings.filter(x=>!GONE.has(x.status)),...S.holds.filter(x=>new Date(x.expiresAt).getTime()>Date.now()),...S.blocks]){
+    if(record.pitch!==pitch||record.date!==date)continue;
+    const window=occupiedOnDay(record,date);
+    if(window&&window.start<b&&window.end>a){edges.add(Math.max(a,Math.floor(window.start)));edges.add(Math.min(b,Math.ceil(window.end)));}
+  }
+  const points=[...edges].sort((x,y)=>x-y),segments=[];
+  for(let i=0;i<points.length-1;i++){
+    const start=points[i],end=points[i+1],cell=cellAt(date,pitch,hi,start,end);
+    const id=(cell.booking||cell.hold||cell.block)?.id||'free',previous=segments.at(-1);
+    if(previous?.id===id)previous.end=end;
+    else segments.push({start,end,cell,id});
+  }
+  return segments;
 }
 const cellSource = (date, pitch, hi) => (cellAt(date, pitch, hi).booking || {}).source || 'counter';
 const holdLeft = hold => Math.max(0, Math.ceil((new Date(hold.expiresAt).getTime() - Date.now()) / 60000));
@@ -335,56 +355,81 @@ function buildAlerts(){
 }
 
 /* ─── loading and mutating ────────────────────────────── */
-async function loadState(){
-  const from = dateFor(-1), to = dateFor(8);
-  const state = await apiRequest('/api/state?from=' + from + '&to=' + to);
-  S.bookings = state.bookings || [];
-  S.holds = state.holds || [];
-  S.blocks = state.blocks || [];
-  S.settings = state.settings || { depositAmount:500 };
-  S.till = state.till;
-  try {
-    /* The board only needs the days it draws; the accounts worklist needs
-       enough history to be worth opening, without pulling a year onto a phone. */
-    const acc = await apiRequest('/api/accounts?from=' + dateFor(-30) + '&to=' + dateFor(8));
-    S.accounts = acc.bookings || [];
-    S.payments = acc.payments || [];
-  } catch (_) { /* the worklist still works off today's bookings alone */ }
-  S.syncedAt = Date.now();
+let mobileEpoch=0,mobileOrder=0,mobileApplied=0,mobileVersion=0,mobileFlight=null,mobileOwner=null;
+function mobileQuery(){
+  const query=new URLSearchParams({from:dateFor(-1),to:dateFor(8),include:S.screen==='money'?'accounts':''});
+  if(S.screen==='money'){query.set('accountsFrom',dateFor(-30));query.set('accountsTo',dateFor(8));}
+  return query;
 }
-
-/* Every write goes through here: post, reload, repaint. A phone loses signal
-   in a stairwell, so a failure has to say so on screen rather than leave a
-   button looking as though it worked. */
-async function mutate(path, body = {}){
-  if (S.busy) return null;
-  S.busy = true; S.apiError = '';
-  render();
-  try {
-    const result = await apiRequest(path, { method:'POST', body });
-    await loadState();
-    return result;
-  } catch (error){
-    S.apiError = error.message;
-    return null;
-  } finally {
-    S.busy = false;
-    render();
+function applyMobile(data,order){
+  if(order<mobileApplied)return;
+  if(mobileOwner!==data.user.id){
+    Object.assign(S,{bookings:[],holds:[],blocks:[],accounts:[],payments:[],checkedIn:{},pendingKeys:{},sheet:null,form:blankForm()});
+    mobileOwner=data.user.id;
   }
+  mobileApplied=order;S.user=data.user;S.csrf=data.csrfToken;
+  if(data.state){
+    S.bookings=data.state.bookings||[];S.holds=data.state.holds||[];S.blocks=data.state.blocks||[];
+    S.settings=data.state.settings||{depositAmount:500};S.till=data.state.till;
+    S.checkedIn=Object.fromEntries(S.bookings.filter(b=>b.checkedInAt).map(b=>[b.id,b.checkedInAt]));
+    if(data.accounts){S.accounts=data.accounts.bookings||[];S.payments=data.accounts.payments||[];}
+  }
+  S.syncedAt=Date.now();
 }
-
+async function loadState({force=false}={}){
+  const query=mobileQuery().toString(),epoch=mobileEpoch,version=mobileVersion;
+  if(mobileFlight?.query===query&&!force)return mobileFlight.promise;
+  const flight={query,order:++mobileOrder,promise:null};
+  flight.promise=(async()=>{
+    const data=await apiRequest('/api/desktop?'+query);
+    if(epoch===mobileEpoch&&version===mobileVersion&&query===mobileQuery().toString())applyMobile(data,flight.order);
+  })().finally(()=>{if(mobileFlight===flight)mobileFlight=null;});
+  mobileFlight=flight;return flight.promise;
+}
+async function mutate(path,body={}){
+  if(S.busy)return null;
+  S.busy=true;S.apiError='';render();
+  const epoch=mobileEpoch,query=mobileQuery(),original=query.toString(),order=++mobileOrder;
+  mobileVersion++;mobileFlight=null;
+  try{
+    query.set('refresh','desktop');
+    const result=await apiRequest(path+'?'+query,{method:'POST',body});
+    if(epoch!==mobileEpoch)return null;
+    // The response is already committed. An optional screen refresh must never
+    // turn a successful save into an apparent failure.
+    if(result.desktop&&original===mobileQuery().toString()&&order>=mobileApplied)applyMobile(result.desktop,order);
+    else{
+      if(result.booking){S.bookings=S.bookings.map(b=>b.id===result.booking.id?result.booking:b);}
+      try{await loadState({force:true});}catch(error){S.apiError='Saved. The screen could not refresh: '+error.message;}
+    }
+    return result;
+  }catch(error){
+    if(epoch===mobileEpoch){
+      if(error.status===409){try{await loadState({force:true});}catch{}}
+      S.apiError=error.message;
+    }
+    return null;
+  }finally{S.busy=false;render();}
+}
+async function saveAndClose(path,body,reset={}){
+  const sheet=S.sheet,result=await mutate(path,body);
+  if(result&&S.sheet===sheet){S.sheet=null;Object.assign(S,reset);render();}
+  return result;
+}
+async function signOut(){
+  if(S.busy)return;
+  S.busy=true;S.apiError='';render();
+  try{
+    await apiRequest('/api/auth/logout',{method:'POST',body:{}});
+    mobileEpoch++;mobileOrder++;mobileApplied=mobileOrder;mobileFlight=null;mobileOwner=null;
+    Object.assign(S,{user:null,csrf:'',bookings:[],holds:[],blocks:[],accounts:[],payments:[],checkedIn:{},pendingKeys:{},sheet:null,form:blankForm()});
+  }catch(error){S.apiError='Sign-out could not be confirmed. You are still signed in. '+error.message;}
+  finally{S.busy=false;render();}
+}
 async function boot(){
   loadPauses();
-  try {
-    const auth = await apiRequest('/api/auth/me');
-    S.user = auth.user;
-    S.csrf = auth.csrfToken;
-    if (!S.user.mustChangePassword) await loadState();
-  } catch (error){
-    if (error.code !== 'authentication_required') S.authError = error.message;
-  }
-  S.ready = true;
-  render();
+  try{await loadState();}catch(error){if(error.code!=='authentication_required')S.authError=error.message;}
+  S.ready=true;render();
 }
 
 /* ─── icons ───────────────────────────────────────────── */
@@ -430,6 +475,7 @@ const field = (id, lbl, val, model, ph, type) => `<label class="m-label"
 const bar = (kicker, title, back) => `<div class="m-bar">
   <button class="m-back" data-act="go" data-v="${back || 'home'}" aria-label="Back">${ICON.back}</button>
   <div class="m-bar-txt"><small>${esc(kicker)}</small><h1>${esc(title)}</h1></div>
+  ${btn('Refresh','refresh','is-ghost')}
   ${avatarBtn('m-bar-avatar')}
 </div>`;
 
@@ -483,7 +529,7 @@ const clampTimerAt = (b, m) => Math.max(timerFloor(b), Math.min(timerCeil(b), Ma
 const bookingOn = (date, pitch, hi) => cellAt(date, pitch, hi).booking || null;
 /* One pitch, one match — the server refuses a second, so the button says so
    first rather than letting the tap come back as a red banner. */
-const pitchBusy = b => S.bookings.find(x => x.date === b.date && x.pitch === b.pitch
+const pitchBusy = b => S.bookings.find(x => x.pitch === b.pitch
   && x.status === 'running' && x.id !== b.id);
 /* The row a booking is drawn on. One that began before the board opens still
    has to appear somewhere, so it clamps to the first visible hour. */
@@ -580,19 +626,17 @@ function cardHtml(b, mode){
   }
 
   if (mode === 'arriving' || mode === 'ready'){
-    const late = now - b.start, busy = pitchBusy(b);
+    const late = now - b.start, busy = pitchBusy(b),elapsed=now>=b.end;
     return `<div class="m-cell is-face${mode === 'ready' ? ' is-ready' : ''}">
       <button class="m-cellface"${open}>
         <span class="m-face-tag">${esc(srcWord(b.source))}</span>
         <span class="m-face-top">${esc(span)}</span>
-        <b class="m-face-cue">${mode === 'ready' ? 'Ready' : late > 0 ? 'Late' : 'Starting soon'}</b>
+        <b class="m-face-cue">${elapsed?'Unresolved':mode === 'ready' ? 'Ready' : late > 0 ? 'Late' : 'Starting soon'}</b>
         <span class="m-face-sub">${esc(b.team)}</span>
       </button>
-      <span class="m-tray">${busy
-        ? `<span class="m-tray-note">${esc(busy.team)} still on</span>`
-        : mode === 'ready'
+      <span class="m-tray">${elapsed?cta('no-show',b.id,null,'No-show'):mode === 'ready'
         ? cta('undo-check-in', b.id, 'undo', '', 'is-quiet is-icon') + cta('start', b.id, null, 'Start')
-        : cta('check-in', b.id, 'check', 'Check in')}</span>
+        : cta('check-in',b.id,'check','','is-quiet is-icon')+cta('start',b.id,null,busy?'Handover':'Start')}</span>
     </div>`;
   }
 
@@ -617,6 +661,12 @@ function cardHtml(b, mode){
 }
 
 function bubHtml(date, hi, pi, tall, week){
+  const segments=cellSegments(date,pi,hi);
+  if(segments.length>1)return `<div class="m-cell-stack">${segments.map(({start,end,cell})=>{
+    const b=cell.booking,mode=b&&tall&&date===todayIso()?liveMode(b):null;
+    if(b&&mode&&firstHiOf(b)===hi)return cardHtml(b,mode);
+    return `<button class="m-bub is-${cell.st}" data-act="sheet-slot" data-pi="${pi}" data-hi="${hi}" data-date="${date}" data-start="${start}" data-end="${end}"><b>${esc(rng12(start,end))}</b><em>${esc(b?b.team:shortLabel(cell.st))}</em></button>`;
+  }).join('')}</div>`;
   const c = cellAt(date, pi, hi), st = c.st;
   const sel = S.sheet && S.sheet.kind === 'slot' && S.sheet.pi === pi
     && S.sheet.hi === hi && S.sheet.date === date;
@@ -696,6 +746,7 @@ function boardBands(cols, live){
       const onNow = live && now >= a && now < a + 60;
 
       const cells = cols.map(c => {
+        if(cellSegments(c.date,c.pitch,hi).length>1)return bubHtml(c.date,hi,c.pitch,opened,week);
         const b = live ? bookingOn(c.date, c.pitch, hi) : null;
         if (!b || firstHiOf(b) !== hi) return bubHtml(c.date, hi, c.pitch, opened, week);
         const mode = liveMode(b);
@@ -736,11 +787,11 @@ function headerHome(){
 
   return `<div class="m-shift">
     <div class="m-brand">
-      <span class="m-brand-mark">F</span><b>${esc(APP_NAME)}</b>${bellBtn()}${avatarBtn('m-avatar')}
+      <span class="m-brand-mark">F</span><b>${esc(APP_NAME)}</b>${btn('Refresh','refresh','is-ghost')}${bellBtn()}${avatarBtn('m-avatar')}
     </div>
     <div class="m-shift-top">
       <div>
-        <div class="m-kicker"><i></i>Live shift · ${esc(dayLabel(0))}</div>
+        <div class="m-kicker"><i></i>Live shift · ${esc(dayLabel(0))}</div><small class="m-sync">${S.syncedAt?'Synced '+Math.max(0,Math.floor((Date.now()-S.syncedAt)/1000))+'s ago':'Connecting…'}</small>
         <div class="m-clock">${t12(now)}</div>
       </div>
       <div class="m-shift-end">
@@ -757,7 +808,8 @@ function headerHome(){
 
 const homeHtml = () => {
   const cols = pitchCols(todayIso());
-  return `<div class="m-board" style="--ncols:${cols.length}">${
+  const earlier=S.bookings.filter(b=>b.status==='running'&&b.date!==todayIso());
+  return `${earlier.length?`<div class="m-pad"><p class="m-lede">Unfinished games from earlier dates</p>${earlier.map(b=>btn(b.team+' · '+b.date+' · End clock','ask-end','is-wide is-dark',` data-id="${esc(b.id)}"`)).join('')}</div>`:''}<div class="m-board" style="--ncols:${cols.length}">${
     boardHead(cols)}${boardBands(cols, true)}</div>`;
 };
 
@@ -1201,23 +1253,14 @@ function collectReady(b){
    it posts two rows. That is what keeps the per-mode totals right for the till
    and caps a later reversal to the tender the money came in on. */
 async function collectNow(id){
-  const b = sessById(id);
-  if (!b || !collectReady(b)) return;
-  const out = outstanding(b), ref = inPersonRef();
-  const key = () => (crypto.randomUUID ? crypto.randomUUID() : 'k' + Date.now() + Math.random());
-  if (S.tender === 'Split'){
-    const cash = Math.round(+S.splitCash || 0);
-    const first = await mutate('/api/bookings/' + id + '/payments',
-      { amount:cash, mode:'Cash', idempotencyKey:key() });
-    if (!first) return;
-    await mutate('/api/bookings/' + id + '/payments',
-      { amount:out - cash, mode:'UPI', reference:ref, idempotencyKey:key() });
-  } else {
-    const done = await mutate('/api/bookings/' + id + '/payments',
-      { amount:out, mode:S.tender, reference:S.tender === 'Cash' ? '' : ref, idempotencyKey:key() });
-    if (!done) return;
-  }
-  if (!S.apiError){ S.sheet = null; S.splitCash = ''; render(); }
+  const b=sessById(id);if(!b||!collectReady(b))return;
+  const out=outstanding(b),split=S.tender==='Split',cash=Math.round(+S.splitCash||0);
+  const signature=JSON.stringify([id,S.tender,out,split?cash:0]);
+  const key=S.pendingKeys[signature]||=(crypto.randomUUID?crypto.randomUUID():'payment-'+Date.now()+'-'+Math.random());
+  const result=await mutate('/api/bookings/'+id+(split?'/payments/split':'/payments'),split?
+    {cashAmount:cash,upiAmount:out-cash,reference:inPersonRef(),idempotencyKey:key,version:b.version}:
+    {amount:out,mode:S.tender,reference:S.tender==='Cash'?'':inPersonRef(),idempotencyKey:key,version:b.version});
+  if(result){delete S.pendingKeys[signature];S.sheet=null;S.splitCash='';render();}
 }
 
 function sheetHtml(){
@@ -1279,7 +1322,8 @@ function sheetHtml(){
     /* Before the booked start there is no "from session start" to offer — that
        minute has not happened. The option stays, stating the minute it would
        use, but dead, so the choice reads the same either side of kick-off. */
-    const busy = pitchBusy(b);
+    const plan=sessionStartPlan(b,S,at,todayIso(),nowMin());
+    const busy=!plan.ok||S.busy;
     const bookedReach = clampTimerAt(b, b.start) === b.start;
     const onBooked = bookedReach && at === b.start;
     const onNow = !onBooked && at === clampTimerAt(b, now);
@@ -1316,11 +1360,13 @@ function sheetHtml(){
         : late < 0
         ? 'Starting ' + mins(-late) + ' early. The clock runs its full ' + mins(dur) + ' and ends at ' + t12(ends) + '.'
         : 'The clock runs the booked slot exactly, ending at ' + t12(ends) + '.')}</p>
+      ${plan.reason?`<p class="m-alert" role="alert">${esc(plan.reason)}</p>`:''}
+      ${plan.previous?`<p class="m-sheet-sub">Confirm ${esc(plan.previous.team)} has left the pitch. Their clock ends and any unpaid balance stays in Accounts.</p>`:''}
       <div class="m-stack">
         <button class="m-btn is-wide is-tall ${busy ? '' : 'is-lime'}" data-act="timer-start"
           data-id="${esc(b.id)}"${busy ? ' disabled' : ''}>${busy
-            ? esc(PITCHES[b.pitch].name + ' still has ' + busy.team + ' on')
-            : esc('Start timer · ' + t12(at))}</button>
+            ? esc(S.busy?'Saving…':'Review the start time')
+            : esc((plan.previous?'End previous & start':'Start timer')+' · '+t12(at))}</button>
         ${btn('Cancel', 'close-sheet', 'is-dark is-wide')}
       </div>`);
   }
@@ -1342,6 +1388,8 @@ function sheetHtml(){
         ${kv('Booking total', money(totalOf(b)))}${kv('Already paid', money(paidFor(b)))}
         ${kv('Outstanding', money(out))}${kv('Contact', b.contact)}</div>
       <div class="m-stack">
+        ${b.status==='upcoming'?btn('Start game','start','is-lime is-wide is-tall',` data-id="${esc(b.id)}"`):''}
+        ${b.status==='running'?btn('End game','ask-end','is-lime is-wide is-tall',` data-id="${esc(b.id)}"`):''}
         ${out > 0 ? btn('Collect ' + money(out), 'collect', 'is-lime is-wide is-tall', ` data-id="${esc(b.id)}"`) : ''}
         ${link('Call the team', tel(b.contact), (out > 0 ? 'is-dark' : 'is-lime is-tall') + ' is-wide')}
         ${link('WhatsApp', wa(b.contact), 'is-dark is-wide')}
@@ -1349,7 +1397,7 @@ function sheetHtml(){
         ${mode === 'ready' ? btn('Undo check-in', 'undo-check-in', 'is-ghost is-wide', ` data-id="${esc(b.id)}"`) : ''}
         ${b.status === 'upcoming' && nowMin() > b.start
           ? btn('Nobody turned up · no-show', 'no-show', 'is-ghost is-wide', ` data-id="${esc(b.id)}"`) : ''}
-        ${b.status === 'upcoming'
+        ${b.status === 'upcoming'&&can('manager')
           ? btn('Cancel this booking', 'ask-cancel', 'is-ghost is-wide', ` data-id="${esc(b.id)}"`) : ''}
       </div>`);
   }
@@ -1525,8 +1573,9 @@ function sheetHtml(){
   /* — a slot on the board — */
   if (sh.kind === 'slot'){
     const date = sh.date, p = PITCHES[sh.pi], h = hs[sh.hi];
-    const c = cellAt(date, sh.pi, sh.hi), st = c.st;
-    const win = cellRange(date, sh.pi, sh.hi), span = rng12(win[0], win[1]);
+    const a=sh.start??h*60,z=sh.end??(h+1)*60;
+    const c = cellAt(date, sh.pi, sh.hi,a,z), st = c.st;
+    const win = cellRange(date, sh.pi, sh.hi,a,z), span = rng12(win[0], win[1]);
     const amount = money(priceFor(sh.pi, win[0], win[1]));
     const head = [label(st), st === 'free' ? 'is-play' : st === 'hold' ? 'is-hold' : 'is-dim'];
     const sub = dayLabel(S.dayIndex) + ' · ' + p.name + ' · ' + p.sub;
@@ -1822,6 +1871,7 @@ function go(screen){
   S.screen = screen;
   S.sheet = null;
   S.apiError = '';
+  if(S.user)loadState().then(render).catch(error=>{S.apiError=error.message;render();});
 }
 
 /* ─── events ──────────────────────────────────────────── */
@@ -1829,7 +1879,7 @@ function go(screen){
    including shared check-in and pause/resume. */
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
-  if (!t || t.disabled) return;
+  if (!t || t.disabled || S.busy) return;
   const act = t.dataset.act, v = t.dataset.v;
   const id = t.dataset.id || null;
   const pi = t.dataset.pi ? +t.dataset.pi : null;
@@ -1864,9 +1914,8 @@ document.addEventListener('click', e => {
       });
       return;
     }
-    case 'logout':
-      mutate('/api/auth/logout').then(() => { S.user = null; S.csrf = ''; render(); });
-      return;
+    case 'logout':signOut();return;
+    case 'refresh':loadState({force:true}).then(render).catch(error=>{S.apiError=error.message;render();});return;
 
     /* sheets */
     case 'close-sheet':
@@ -1874,7 +1923,7 @@ document.addEventListener('click', e => {
       S.timerAt = null; S.revVal = ''; S.revReason = ''; S.apiError = '';
       break;
     case 'sheet-slot':
-      S.sheet = { kind:'slot', pi, hi, date:t.dataset.date };
+      S.sheet = {kind:'slot',pi,hi,date:t.dataset.date,start:t.dataset.start==null?undefined:+t.dataset.start,end:t.dataset.end==null?undefined:+t.dataset.end};
       S.form = blankForm();
       break;
     case 'sheet-sess': S.sheet = { kind:'sess', id }; break;
@@ -1886,8 +1935,11 @@ document.addEventListener('click', e => {
     /* a match, from arrival to settled */
     case 'check-in': mutate('/api/bookings/'+id+'/check-in',{checked:true,version:b.version});return;
     case 'undo-check-in': mutate('/api/bookings/'+id+'/check-in',{checked:false,version:b.version});return;
-    /* Which minute the clock runs from is the operator's call, not a default. */
-    case 'start': S.sheet = { kind:'timer', id }; S.timerAt = null; break;
+    case 'start': {
+      const now=clampTimerAt(b,nowMin());
+      S.timerAt=sessionStartPlan(b,S,now,todayIso(),nowMin()).ok?now:clampTimerAt(b,b.start);
+      S.sheet={kind:'timer',id};break;
+    }
     case 'timer-mode':
       S.timerAt = clampTimerAt(sessById(sh.id), v === 'booked' ? sessById(sh.id).start : nowMin());
       break;
@@ -1904,10 +1956,12 @@ document.addEventListener('click', e => {
     case 'timer-start': {
       const s = sessById(id);
       const atMinute = clampTimerAt(s, S.timerAt == null ? nowMin() : S.timerAt);
-      delete S.checkedIn[id];
-      S.sheet = null; S.timerAt = null;
-      mutate('/api/bookings/' + id + '/status',
-        { status:'running', atMinute, version:s.version });
+      const plan=sessionStartPlan(s,S,atMinute,todayIso(),nowMin());
+      if(!plan.ok){S.apiError=plan.reason;render();return;}
+      mutate('/api/bookings/'+id+'/start',{atMinute,version:s.version,
+        previous:plan.previous?{id:plan.previous.id,version:plan.previous.version}:undefined}).then(result=>{
+          if(result){S.sheet=null;S.timerAt=null;render();}
+        });
       return;
     }
     case 'pause-timer':
@@ -1917,13 +1971,12 @@ document.addEventListener('click', e => {
     case 'ask-end': S.sheet = { kind:'endask', id }; break;
     case 'end-game':
     case 'complete':
-      S.sheet = null;
       /* No atMinute: stating a minute outside the booking's own window makes
          the change a correction, and a match that ran over is outside it by
          definition — which would have asked an operator for a manager to end
          the very sessions that most often need ending. The server's own clock
          is the right answer for "now". */
-      mutate('/api/bookings/' + id + '/status', { status:'done', version:b.version });
+      saveAndClose('/api/bookings/'+id+'/status',{status:'done',version:b.version});
       return;
     /* The clock never should have run. A paused match is already back at
        "upcoming" on the server, so this only forgets what the phone was
@@ -1933,32 +1986,25 @@ document.addEventListener('click', e => {
       const held = !!b.pausedAt;
       delete S.paused[id]; savePauses();
       delete S.checkedIn[id];
-      S.sheet = null;
-
-      mutate('/api/bookings/' + id + '/status',
-        { status:'upcoming', reason:'Started in error, undone from the phone', version:b.version });
+      saveAndClose('/api/bookings/'+id+'/status',{status:'upcoming',reason:'Started in error, undone from the phone',version:b.version});
       return;
     }
     case 'extend':
       mutate('/api/bookings/' + id + '/extend', { minutes:30, version:b.version });
       return;
     case 'no-show':
-      S.sheet = null;
-      mutate('/api/bookings/' + id + '/status', { status:'noshow', version:b.version });
+      saveAndClose('/api/bookings/'+id+'/status',{status:'noshow',version:b.version});
       return;
     case 'cancel-booking': {
       if (S.cancelReason.trim().length <= 3) return;
       const reason = S.cancelReason.trim();
-      S.sheet = null; S.cancelReason = '';
-      mutate('/api/bookings/' + sh.id + '/status',
-        { status:'cancelled', reason, version:sessById(sh.id).version });
+      saveAndClose('/api/bookings/'+sh.id+'/release',{reason,version:sessById(sh.id).version},{cancelReason:''});
       return;
     }
     case 'release-booking': {
       if (S.releaseReason.trim().length <= 3) return;
       const reason = S.releaseReason.trim();
-      S.sheet = null; S.releaseReason = '';
-      mutate('/api/bookings/' + id + '/release', { reason, version:b.version });
+      saveAndClose('/api/bookings/'+id+'/release',{reason,version:b.version},{releaseReason:''});
       return;
     }
 
@@ -1980,9 +2026,7 @@ document.addEventListener('click', e => {
     case 'reopen-session': {
       if (S.cancelReason.trim().length <= 3) return;
       const reason = S.cancelReason.trim();
-      S.sheet = null; S.cancelReason = '';
-      mutate('/api/bookings/' + id + '/status',
-        { status:'upcoming', reason, version:b.version });
+      saveAndClose('/api/bookings/'+id+'/status',{status:'upcoming',reason,version:b.version},{cancelReason:''});
       return;
     }
     case 'ask-reverse': {
@@ -1999,12 +2043,13 @@ document.addEventListener('click', e => {
       const inMode = Math.round((rec.collectedByMode || {})[S.revMode] || 0);
       const amount = Math.max(0, parseInt(S.revVal, 10) || 0);
       if (!can('manager') || amount <= 0 || amount > inMode || S.revReason.trim().length < 5) return;
+      const signature=JSON.stringify(['refund',id,S.revMode,amount,S.revReason.trim()]);
+      const key=S.pendingKeys[signature]||=(crypto.randomUUID?crypto.randomUUID():'refund-'+Date.now()+'-'+Math.random());
       const body = { amount, mode:S.revMode, reason:S.revReason.trim(),
         reference:S.revMode === 'Cash' ? '' : inPersonRef(),
-        idempotencyKey:crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now() + Math.random(),
+        idempotencyKey:key,
         version:rec.version };
-      S.sheet = null; S.revVal = ''; S.revReason = '';
-      mutate('/api/bookings/' + id + '/refunds', body);
+      mutate('/api/bookings/'+id+'/refunds',body).then(result=>{if(result){delete S.pendingKeys[signature];S.sheet=null;S.revVal='';S.revReason='';render();}});
       return;
     }
     case 'today-filter': S.todayFilter = v; break;
@@ -2016,26 +2061,26 @@ document.addEventListener('click', e => {
       const h = hours()[sh.hi];
       /* Read before the form is cleared, or the booking goes up nameless. */
       const body = { date:confirm ? todayIso() : sh.date, pitch:sh.pi,
-        start:h * 60, end:(h + 1) * 60,
+        start:sh.start??h*60, end:sh.end??(h+1)*60,
         team:S.form.team.trim(), contact:S.form.contact.trim() };
       const collectAfterBooking = t.dataset.pay === 'paid';
-      S.sheet = null; S.form = blankForm();
       mutate('/api/bookings', body).then(result => {
+        if(!result)return;
+        S.sheet=null;S.form=blankForm();
         if (collectAfterBooking && result?.bookings?.[0]){
           S.sheet = { kind:'collect', id:result.bookings[0].id };
           S.splitCash = '';
-          render();
         }
+        render();
       });
       return;
     }
     case 'hold-slot': {
       if (!formReady()) return;
       const h = hours()[sh.hi];
-      const body = { date:sh.date, pitch:sh.pi, start:h * 60, end:(h + 1) * 60,
+      const body = {date:sh.date,pitch:sh.pi,start:sh.start??h*60,end:sh.end??(h+1)*60,
         team:S.form.team.trim(), contact:S.form.contact.trim(), pay:S.form.pay };
-      S.sheet = null; S.form = blankForm();
-      mutate('/api/holds', body);
+      mutate('/api/holds',body).then(result=>{if(result){S.sheet=null;S.form=blankForm();render();}});
       return;
     }
     case 'confirm-hold': S.sheet = null; mutate('/api/holds/' + id + '/confirm'); return;
@@ -2163,7 +2208,7 @@ setInterval(() => {
 setInterval(() => {
   if (!S.user || S.busy || S.sheet || typingNow()) return;
   refreshLedger();
-}, 20000);
+}, 10000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && S.user && !S.busy) loadState().then(render).catch(() => {});
 });

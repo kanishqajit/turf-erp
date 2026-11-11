@@ -211,5 +211,5 @@ export function startRendering(){
   const bootDay=isoDate(new Date());
   addEventListener('scroll',()=>{if(!stuckRaf)stuckRaf=requestAnimationFrame(()=>syncStuck());},{passive:true});
   setInterval(()=>{if(isoDate(new Date())!==bootDay){location.reload();return;}if(!S.user)return;if(LIVE_VIEWS.has(S.view))render();else{renderTopbar();if(S.view==='availability'){syncNowLine();syncLiveCards();}}},1000);
-  setInterval(refresh,15000);
+  setInterval(refresh,10000);
 }

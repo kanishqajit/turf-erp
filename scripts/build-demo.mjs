@@ -16,9 +16,14 @@ import { join } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => readFile(join(root, name), 'utf8');
 
-const [css, js, backend] = await Promise.all([
-  read('mobile.css'), read('mobile.js'), read('demo/backend.js'),
+const [css, mobile, backend,occupancy,startRules] = await Promise.all([
+  read('mobile.css'), read('mobile.js'), read('demo/backend.js'),read('client/occupancy.js'),read('client/session-start.js'),
 ]);
+
+// Inline the shared ESM helpers too: the demo must keep working as a single
+// local file, with no module fetches and no connection to the production API.
+const inline=source=>source.replace(/^import .*;\n/gm,'').replaceAll('export ','');
+const js=[inline(occupancy),inline(startRules),inline(mobile)].join('\n');
 
 /* The app ends with `render(); boot();`, and boot() asks the API who is signed
    in. The backend below answers that instantly, so nothing else has to change:

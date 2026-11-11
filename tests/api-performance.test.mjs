@@ -171,6 +171,33 @@ test('scoped hosted APIs preserve domain rules, identities, authentication and d
     await t.test('health and events authenticate without constructing application workspaces',async()=>{
       for(const path of ['/api/health','/api/public/events']){const {response}=await call(client(),path,'GET',undefined,path.endsWith('events')?204:200);assert.doesNotMatch(response.headers.get('Server-Timing'),/hydrate/);}
     });
+    await t.test('scoped split payments commit both tenders once and detect cross-booking key reuse',async()=>{
+      const b=(await call(admin,'/api/bookings','POST',{date:day(12),pitch:0,start:600,end:660,team:'Atomic split',contact:'9000000000'},201)).data.bookings[0];
+      const path=`/api/bookings/${b.id}/payments/split?refresh=desktop&${range}`;
+      const body={cashAmount:500,upiAmount:b.amount-500,reference:'In person',idempotencyKey:'hosted-split-0001',version:b.version};
+      rpcCalls=[];
+      const paid=(await call(staff,path,'POST',body)).data;assert.equal(paid.booking.collected,b.amount);assert.ok(paid.desktop.state.bookings.some(x=>x.id===b.id));
+      assert.deepEqual(rpcCalls,['/rest/v1/rpc/futly_api_snapshot','/rest/v1/rpc/futly_ledger_commit']);
+      assert.equal((await call(staff,path,'POST',body)).data.booking.collected,b.amount);
+      await call(staff,`/api/bookings/${created.id}/payments/split`,'POST',{...body,version:created.version},409);
+      assert.equal((await pg.query('SELECT count(*)::int n FROM futly.payment_events WHERE booking_id=$1',[b.id])).rows[0].n,2);
+    });
+    await t.test('hosted handover loads an earlier clock, ends it and starts today in one commit',async()=>{
+      const minute=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',hourCycle:'h23'}).format(new Date()))*60;
+      const start=Math.max(360,Math.min(1380,minute));
+      const b=(await call(admin,'/api/bookings','POST',{date:day(0),pitch:1,start,end:start+60,team:'Handover next',contact:'9000000000'},201)).data.bookings[0];
+      let previous;await ledger.run(()=>{
+        previous=ledger.store.createBookings([{date:day(-1),pitch:1,start:600,end:660,team:'Earlier unfinished',contact:'9000000001'}],owner)[0];
+        ledger.store.db.prepare("UPDATE bookings SET status='running',started_at=600 WHERE id=?").run(previous.id);
+      });
+      rpcCalls=[];
+      const result=(await call(staff,`/api/bookings/${b.id}/start?refresh=desktop&${range}`,'POST',{
+        version:b.version,atMinute:start,previous:{id:previous.id,version:previous.version}})).data;
+      assert.equal(result.booking.status,'running');
+      assert.deepEqual(rpcCalls,['/rest/v1/rpc/futly_api_snapshot','/rest/v1/rpc/futly_ledger_commit']);
+      const ended=(await pg.query('SELECT status FROM futly.bookings WHERE id=$1',[previous.id])).rows[0];assert.equal(ended.status,'done');
+      assert.ok(result.desktop.state.bookings.some(x=>x.id===b.id&&x.status==='running'));
+    });
     await t.test('session heartbeats and revocation persist across fresh snapshots',async()=>{
       await pg.query('UPDATE futly.sessions SET last_seen_at=$1 WHERE token_hash=$2',[Date.now()-60000,createHash('sha256').update(staff.cookie.split('=')[1]).digest('hex')]);
       await call(staff,'/api/auth/me');const session=(await pg.query('SELECT last_seen_at FROM futly.sessions WHERE token_hash=$1',[createHash('sha256').update(staff.cookie.split('=')[1]).digest('hex')])).rows[0];assert.ok(session.last_seen_at>Date.now()-10000);

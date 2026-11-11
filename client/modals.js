@@ -1,6 +1,6 @@
 import { DOWL, MON, PAY_FORM, PAY_MODES, PITCHES } from './constants.js';
 import { dateForAddress, isoDate, TODAY, durTxt, hours, nowMin, rng12, t12 } from './datetime.js';
-import { bookingWindow, clampTimerAt, esc, money, priceFor, segCls, sessionById, timerCeil, timerFloor, validContact, weekStart } from './domain.js';
+import { bookingWindow, clampTimerAt, startPlan, esc, money, priceFor, segCls, sessionById, timerCeil, timerFloor, validContact, weekStart } from './domain.js';
 import { can, S } from './state.js';
 import { refundDialogHtml } from './views/accounts.js';
 import { formFieldsHtml } from './views/availability.js';
@@ -49,7 +49,7 @@ function timerDialogHtml(){
   const now=Math.floor(nowMin()),at=clampTimerAt(session,S.timerAt==null?now:S.timerAt);
   const duration=session.end-session.start,ends=at+duration;
   const floor=timerFloor(session),ceil=timerCeil(session);
-  const late=at-session.start,over=ends-session.end;
+  const late=at-session.start,over=ends-session.end,plan=startPlan(session,at);
   /* Before the booked start there is no "from session start" to offer — that
      minute has not happened, and a clock cannot begin in the future. The option
      stays on the dialog stating the minute it would use, but dead, so the
@@ -76,7 +76,9 @@ function timerDialogHtml(){
     <p class="dnote">${late>0?'Team went on '+late+' min after the booked start, so the clock ends '+over+' min late at '+t12(ends)+'.'
       :late<0?'Starting '+(-late)+' min early. The clock runs its full '+durTxt(duration)+' and ends at '+t12(ends)+'.'
       :'The clock runs the booked slot exactly, ending at '+t12(ends)+'.'}</p><div class="stack">
-    <button class="dbtn primary wide sm" data-act="timer-start">Start timer &middot; ${t12(at)}</button>
+    ${!plan.ok?`<p class="dnote" role="alert">${esc(plan.reason)}</p>`:''}
+    ${plan.previous?`<p class="dnote">Confirm that ${esc(plan.previous.team)} has left the pitch. Their clock will end; any unpaid balance stays in Accounts.</p>`:''}
+    <button class="dbtn primary wide sm" data-act="timer-start"${plan.ok&&!S.busy?'':' disabled'}>${plan.previous?'End '+esc(plan.previous.team)+' & start this game':'Start timer'} &middot; ${t12(at)}</button>
     <button class="dbtn ghost wide" data-act="timer-cancel" style="height:44px">Cancel</button></div></div></div>`;
 }
 

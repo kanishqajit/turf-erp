@@ -5,8 +5,9 @@ import { spawnSync } from 'node:child_process';
 
 const directory=await mkdtemp(join(tmpdir(),'futly-portable-'));
 try{
-  for(const name of ['server','tests','client','customer','scripts','supabase'])await cp(name,join(directory,name),{recursive:true});
+  for(const name of ['server','tests','client','customer','scripts','supabase','demo'])await cp(name,join(directory,name),{recursive:true});
   await copyFile('package.json',join(directory,'package.json'));
+  await copyFile('mobile.js',join(directory,'mobile.js'));
   await symlink(resolve('node_modules'),join(directory,'node_modules'),'junction');
   await cp('cloudflare',join(directory,'cloudflare'),{recursive:true});
   const path=join(directory,'server/store.mjs');

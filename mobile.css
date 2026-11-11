@@ -1027,3 +1027,13 @@ input.m-field[type=time]{font:700 17px var(--sans);color-scheme:dark}
 [data-theme="dark"] .m-sheet-card{box-shadow:0 -14px 44px rgba(0,0,0,.62)}
 [data-theme="dark"] .m-panel,
 [data-theme="dark"] .m-card{box-shadow:0 2px 14px rgba(0,0,0,.35)}
+
+/* Preserve each booking and sellable gap inside a partially occupied hour. */
+.m-cell-stack{display:flex;flex-direction:column;gap:6px;min-width:0}
+.m-cell-stack .m-bub{min-height:48px;flex:1}
+.m-cell-stack .m-bub b{font-size:11px}
+.m-cell-stack .m-bub em{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.m-shift .m-brand .m-btn{padding:6px;font-size:11px;min-height:32px;margin-left:auto}
+.m-bar>.m-btn{padding:7px;font-size:12px;min-height:36px}
+
+.m-sync{display:block;color:var(--muted2);font:500 9px var(--sans);margin:3px 0}

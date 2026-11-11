@@ -2,6 +2,8 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
+// Regenerate the standalone demonstration from the current phone and shared rules.
+await import('./build-demo.mjs');
 const root=fileURLToPath(new URL('../',import.meta.url));
 const output=join(root,'dist');
 // Explicit public assets only: never copy server sources, ledgers, or secrets.

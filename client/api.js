@@ -144,7 +144,13 @@ export async function mutate(path, body = {}){
       }
     }
     return result;
-  }catch(error){if(S.user?.id===userId&&sessionEpoch===epoch)S.apiError=error.message;return null;}
+  }catch(error){
+    if(S.user?.id===userId&&sessionEpoch===epoch){
+      if(error.status===409){try{await loadState({force:true});}catch{}}
+      S.apiError=error.message;
+    }
+    return null;
+  }
   finally{S.busy=false;}
 }
 

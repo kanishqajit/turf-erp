@@ -159,8 +159,12 @@ export function viewSessions(){
     ['₹','Payment received','var(--green)','#fff',true]].map(([mark,text,background,color,dot]) =>
       `<span><b class="${dot ? 'dot' : ''}" style="background:${background};color:${color}">${mark}</b>${text}</span>`).join('');
   const attention = cards.filter(card => card.running || card.duePay || card.late);
-  const actionCards = attention.length ? attention : upcomingAll.slice(0,3);
-  const actionNote = attention.length ? 'Live, late, unresolved, and finished sessions needing action'
+  const nextPerPitch=PITCHES.map((_,index)=>upcomingAll.find(card=>card.pitchIndex===index&&!card.late)).filter(Boolean);
+  const actionCards=Array.from(new Map([
+    ...cards.filter(card=>card.id===S.focusSession),...attention.filter(card=>card.running),
+    ...nextPerPitch,...attention.filter(card=>!card.running),
+  ].map(card=>[card.id,card])).values());
+  const actionNote = attention.length ? 'Games needing action and the next teams to prepare'
     : next ? 'No urgent work. Showing the next sessions to prepare.' : 'No sessions left today.';
   const actionHtml = `<div class="sess-sec priority"><div class="sechead">
     <h2 class="h2 sm">Action queue</h2><span class="count">${actionNote}</span></div><div class="priority-strip">
