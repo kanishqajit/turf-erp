@@ -238,3 +238,15 @@ If Google sign-in starts from checkout, the unfinished slot and contact fields
 are kept only in that tab's session storage for up to one hour. On return Futly
 reloads availability before showing checkout; a newly occupied slot must be
 selected again. Booking confirmation still requires an explicit customer action.
+
+
+### Database-local function routing
+
+The Futly project database is in `ap-northeast-2` (Seoul). Production Pages
+sets `TURF_SUPABASE_FUNCTION_REGION=ap-northeast-2` and sends Supabase's
+`x-region` header, keeping snapshot and commit RPCs local to the database.
+The proxy removes client-supplied `forceFunctionRegion` and does not forward
+client region headers. Other deployments can omit the setting for automatic
+routing. A pinned-region outage requires changing/removing this setting via
+Git; writes are not blindly replayed in a different region after a timeout.
+See https://supabase.com/docs/guides/functions/regional-invocation.

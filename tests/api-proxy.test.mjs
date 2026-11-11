@@ -38,3 +38,17 @@ test('proxy caps streamed bodies and fails closed on upstream errors',async()=>{
   assert.equal((await proxyApi(request,env,async()=>{throw new Error('network');})).status,503);
   assert.equal((await proxyApi(request,env,async()=>new Response(null,{status:302,headers:{Location:'https://attacker.test'}}))).status,502);
 });
+
+
+test('regional routing is owned by server configuration, never browser headers or query',async()=>{
+  for(const region of [undefined,'ap-northeast-2']){
+    const response=await proxyApi(new Request('https://futly.pages.dev/api/desktop?from=2026-11-01&forceFunctionRegion=us-east-1',{headers:{'x-region':'us-east-1'}}),
+      {...env,TURF_SUPABASE_FUNCTION_REGION:region},async(url,options)=>{
+        assert.equal(url.searchParams.get('forceFunctionRegion'),null);
+        assert.equal(url.searchParams.get('from'),'2026-11-01');
+        assert.equal(options.headers.get('x-region'),region||null);
+        return Response.json({ok:true},{headers:{'x-sb-edge-region':region||'auto'}});
+      });
+    assert.equal(response.headers.get('x-sb-edge-region'),region||'auto');
+  }
+});

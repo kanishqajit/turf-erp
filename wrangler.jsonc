@@ -5,7 +5,8 @@
   "env": {
     "production": {
       "vars": {
-        "TURF_SUPABASE_URL": "https://ofjgkrobvzwqkuqgxdho.supabase.co"
+        "TURF_SUPABASE_URL": "https://ofjgkrobvzwqkuqgxdho.supabase.co",
+        "TURF_SUPABASE_FUNCTION_REGION": "ap-northeast-2"
       }
     },
     "preview": {

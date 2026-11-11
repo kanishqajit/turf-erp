@@ -12,8 +12,12 @@ export async function proxyApi(request,env,fetcher=fetch){
     if(target.protocol!=='https:'||!target.hostname.endsWith('.supabase.co')||target.pathname!=='/'||target.username||target.password)throw new Error();
     const functionName=request.method==='GET'&&url.pathname==='/api/public/venues'?'futly-venues':'futly-api';
     target.pathname='/functions/v1/'+functionName+url.pathname;target.search=url.search;
+    target.searchParams.delete('forceFunctionRegion');
   }catch{return json(503,'backend_unconfigured','Shared service is not configured.');}
   const headers=new Headers();
+  // Keep the ledger runtime beside its database: writes perform multiple RPCs.
+  // Regional routing is server configuration, never browser input.
+  if(env.TURF_SUPABASE_FUNCTION_REGION)headers.set('x-region',env.TURF_SUPABASE_FUNCTION_REGION);
   for(const name of ['cookie','content-type','x-csrf-token','origin']){
     const value=request.headers.get(name);if(value)headers.set(name,value);
   }
