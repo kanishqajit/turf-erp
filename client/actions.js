@@ -1,5 +1,5 @@
 import { END_HOUR, PITCHES, START_HOUR } from './constants.js';
-import { dateForAddress, dayOffsetOf, hourRng12, hours, nowMin, rng12, toMin } from './datetime.js';
+import { TODAY, isoDate, dateForAddress, dayOffsetOf, hourRng12, hours, nowMin, rng12, toMin } from './datetime.js';
 import { blockAtTime, bookingAtTime, bookingById, bookingWindow, clampTimerAt, goToDayOffset, holdAtTime, inPersonRef, sessionById, statusAtTime, validContact } from './domain.js';
 import { apiRequest, loadState, mutate, refreshOperationalState, signOut } from './api.js';
 import { applyTheme, blankForm, can, S, savePrefs } from './state.js';
@@ -199,7 +199,7 @@ async function handleClick(event){
     case 'toggle-pitch-picker':{const pitch=+target.dataset.pi;S.colorPickerOpen=S.colorPickerOpen===pitch?null:pitch;break;}
     case 'set-pitch-color':S.pitchColors[+target.dataset.pi]=value;S.colorPickerOpen=null;savePrefs();break;
     case 'pitch':S.pitch=+value;clearCalendarPanels();break;
-    case 'week':S.weekOffset+=+value;clearCalendarPanels();render();await refreshOperationalState();break;
+    case 'week':S.weekOffset+=+value;clearCalendarPanels();render();await refreshOperationalState({ifNeeded:true});break;
     case 'avail-mode':S.availMode=value;clearCalendarPanels();savePrefs();break;
     /* Two buttons drive this, so it sets from the value it is given and only
        falls back to a flip when something calls it without one. */
@@ -248,9 +248,9 @@ async function handleClick(event){
     case 'sessions-mode':S.sessionsMode=value;S.focusSession=null;break;
     case 'toggle-band':if(S.collapsedBands[value])delete S.collapsedBands[value];else S.collapsedBands[value]=true;savePrefs();break;
     case 'day-focus':S.dayIndex=+value;S.availMode='day';clearCalendarPanels();break;
-    case 'day-jump':goToDayOffset(+value);clearCalendarPanels();render();await refreshOperationalState();break;
+    case 'day-jump':goToDayOffset(+value);clearCalendarPanels();render();await refreshOperationalState({ifNeeded:true});break;
     case 'day':{const next=S.dayIndex+(+value);if(next<0){S.dayIndex=6;S.weekOffset-=1;}else if(next>6){S.dayIndex=0;S.weekOffset+=1;}
-      else S.dayIndex=next;clearCalendarPanels();render();await refreshOperationalState();break;}
+      else S.dayIndex=next;clearCalendarPanels();render();await refreshOperationalState({ifNeeded:true});break;}
     case 'slot':select(+target.dataset.di,+target.dataset.hi,+target.dataset.pi,+(target.dataset.offset || 0));break;
     case 'clear-sel':S.sel=null;S.formOpen=false;S.form=blankForm();break;
     case 'sel-primary':{const start=selectedStart(),status=statusAtTime(S.sel.di,S.pitch,start),hour=hours()[S.sel.hi];
@@ -263,7 +263,7 @@ async function handleClick(event){
       subject:`${hold.team} · ${rng12(hold.start,hold.end)}`};S.actionReason='';}break;}
     case 'drop-custom':{const booking=bookingAtTime(S.sel.di,S.pitch,selectedStart());if(booking&&can('manager')){S.actionAsk={kind:'booking',id:booking.id,
       title:'Release confirmed booking',subject:`${booking.team} · ${rng12(booking.start,booking.end)}`};S.actionReason='';}break;}
-    case 'booking-account':S.view='accounts';S.accountFocus=id;S.sel=null;break;
+    case 'booking-account':{const booking=accountBookingById(id);S.view='accounts';S.accountFocus=id;S.sel=null;if(booking){S.accountFrom=booking.date;S.accountTo=booking.date;S.accountStatus='all';S.accountSearch='';}break;}
     case 'start-offset':S.startOffset=+value;S.blockOpen=false;break;
     /* Sliding the window, not stretching it: the duration is set in the box
        below and is left exactly as it was, so only where the booking sits
@@ -342,7 +342,7 @@ async function handleClick(event){
       {status:'done',version:current.version});if(result)S.doneAsk=null;break;}
     case 'done-collect':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
       {status:'done',version:current.version});if(result){S.doneAsk=null;
-        if(!sessionById(current.id)){S.view='accounts';S.accountFocus=current.id;await refreshOperationalState();}
+        if(!sessionById(current.id)){S.view='accounts';S.accountFocus=current.id;S.accountFrom=current.date;S.accountTo=current.date;S.accountStatus='all';S.accountSearch='';await refreshOperationalState({ifNeeded:true});}
         const ended=sessionById(current.id);if(ended)pickPay(ended,'Payment done');
         else S.apiError='Session ended. Open Accounts to collect its remaining balance.';}break;}
     case 'adv-cancel':if(S.advAsk)clearPendingKey('payment',S.advAsk);S.advAsk=null;S.advVal='';S.advReason='';S.advCash='';S.advUpi='';break;
@@ -364,6 +364,10 @@ async function handleClick(event){
       if(result){clearPendingKey('refund',session.id);S.advAsk=null;S.advVal='';
         S.advReason='';}
       break;}
+    case 'account-period':{const from=new Date(TODAY),to=new Date(TODAY);
+      if(value==='month'){from.setDate(1);to.setMonth(to.getMonth()+1,0);}
+      if(value==='year'){from.setDate(from.getDate()-180);to.setDate(to.getDate()+180);}
+      S.accountFrom=isoDate(from);S.accountTo=isoDate(to);S.accountFocus=null;break;}
     case 'account-clear-focus':S.accountFocus=null;break;
     case 'account-history':S.accountHistory=S.accountHistory===id?null:id;break;
     case 'account-status':S.accountStatus=value;break;
@@ -415,7 +419,7 @@ async function handleInput(event){
     case 'day-date':{if(!/^\d{4}-\d{2}-\d{2}$/.test(target.value))break;
       const [year,month,day]=target.value.split('-').map(Number),date=new Date(year,month-1,day);
       if(date.getFullYear()!==year||date.getMonth()!==month-1||date.getDate()!==day)break;
-      goToDayOffset(dayOffsetOf(date));clearCalendarPanels();render();await refreshOperationalState();render();break;}
+      goToDayOffset(dayOffsetOf(date));clearCalendarPanels();render();await refreshOperationalState({ifNeeded:true});render();break;}
     case 'adv-val':S.advVal=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advVal)target.value=S.advVal;render();break;
     case 'adv-cash':S.advCash=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advCash)target.value=S.advCash;render();break;
     case 'adv-upi':S.advUpi=target.value.replace(/\D/g,'').slice(0,7);if(target.value!==S.advUpi)target.value=S.advUpi;render();break;

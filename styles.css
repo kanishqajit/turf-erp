@@ -2463,3 +2463,10 @@ button.pitchcol:focus-visible,.group-date:focus-visible{
 .carry-notice{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;margin:0 0 12px;border:1px solid var(--edge);border-radius:18px;background:var(--paper);color:var(--ink)}
 .carry-notice p{margin:5px 0 0;font-size:12px;line-height:1.5;opacity:.7}.carry-notice .dbtn{flex-shrink:0}
 @media(max-width:700px){.carry-notice{align-items:flex-start;flex-direction:column}}
+
+/* Keep board choices readable without hover, including narrower desktops. */
+.modeopt.labeled-mode{display:inline-flex;align-items:center;gap:6px;padding:0 10px}
+.boardbar-end{flex-wrap:wrap}
+@media(max-width:1400px){.boardbar{flex-wrap:wrap}.boardbar-end{margin-left:auto}}
+
+.acct-stats[hidden]{display:none}

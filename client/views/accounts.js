@@ -68,28 +68,29 @@ export function refundDialogHtml(){
 }
 
 export function viewAccounts(){
+  const ready=S.dataReady!==false,accounts=ready?S.accounts:[];
   const today=isoDate(new Date()),search=S.accountSearch.trim().toLowerCase();
   const statusMatch=booking=>S.accountStatus==='all'||(S.accountStatus==='open'&&actionable(booking)&&outstandingFor(booking)>0)
     ||(S.accountStatus==='paid'&&outstandingFor(booking)===0)||(S.accountStatus==='refunds'&&eventsFor(booking.id).some(event=>event.kind==='refund'))
     ||(S.accountStatus==='cancelled'&&['cancelled','noshow'].includes(booking.status));
-  const rows=S.accounts.filter(booking=>(!S.accountFrom||booking.date>=S.accountFrom)&&(!S.accountTo||booking.date<=S.accountTo)
+  const rows=accounts.filter(booking=>(!S.accountFrom||booking.date>=S.accountFrom)&&(!S.accountTo||booking.date<=S.accountTo)
     &&statusMatch(booking)&&(!search||`${booking.team} ${booking.contact} ${booking.id}`.toLowerCase().includes(search)))
     .sort((a,b)=>Number(actionable(b)&&outstandingFor(b)>0)-Number(actionable(a)&&outstandingFor(a)>0)||b.date.localeCompare(a.date)||b.start-a.start);
-  const active=S.accounts.filter(actionable),releaseBlocked=active.filter(booking=>booking.collected>0&&booking.date>=today);
-  const due=active.filter(booking=>outstandingFor(booking)>0),netCollected=S.accounts.reduce((sum,booking)=>sum+(booking.collected||0),0);
+  const active=accounts.filter(actionable),releaseBlocked=active.filter(booking=>booking.collected>0&&booking.date>=today);
+  const due=active.filter(booking=>outstandingFor(booking)>0),netCollected=accounts.reduce((sum,booking)=>sum+(booking.collected||0),0);
   const outstanding=due.reduce((sum,booking)=>sum+outstandingFor(booking),0);
-  return `<main class="accounts"><div class="headrow"><div><div class="kicker">Accounts</div><h1 class="h1">Collections and refunds</h1></div>
+  return `<main class="accounts"><div class="headrow"><div><div class="kicker">Accounts</div><h1 class="h1">Collections and refunds</h1><p class="note">Totals and search cover the selected booking dates. Choose a wider range for older balances.</p></div>
     <div class="headrow-acct">${S.accountFocus ? `<button class="pillbtn secondary" data-act="account-clear-focus">Clear highlight</button>` : ''}
-    <button class="pillbtn" data-act="account-export">Export loaded ledger</button></div></div>
-    <div class="acct-stats">${[['Net collected',money(netCollected),''],['Outstanding',money(outstanding),outstanding?' cash':''],
+    <button class="pillbtn" data-act="account-export"${ready?'':' disabled'}>Export loaded ledger</button></div></div>
+    <div class="acct-stats"${ready?'':' hidden'}>${[['Net collected',money(netCollected),''],['Outstanding',money(outstanding),outstanding?' cash':''],
       ['Blocks release',String(releaseBlocked.length),releaseBlocked.length?' danger':''],['Due bookings',String(due.length),due.length?' cash':'']]
       .map(([label,value,cls])=>`<div class="stat${cls}"><span class="lbl">${label}</span><b>${value}</b></div>`).join('')}</div>
-    <section class="acct-card"><div class="chart-head"><div><h2 class="h3">Payment worklist</h2><span class="note">${rows.length} matching bookings · cancelled and refunded records remain visible</span></div></div>
-    <div class="acct-filters"><label><span class="sr-only">Search accounts</span><input class="dinput" data-act="account-search" value="${esc(S.accountSearch)}" placeholder="Search team, contact or booking ID"></label>
+    <section class="acct-card"><div class="chart-head"><div><h2 class="h3">Payment worklist</h2><span class="note">${ready?rows.length+' matching bookings · cancelled and refunded records remain visible':S.dataError?'Choose a valid date range or retry.':'Loading the selected booking dates…'}</span></div></div>
+    <div class="optrow" style="padding:12px 16px"><button class="mini" data-act="account-period" data-v="today">Today</button><button class="mini" data-act="account-period" data-v="month">This month</button><button class="mini" data-act="account-period" data-v="year">Past / next 6 months</button></div><div class="acct-filters"><label><span class="sr-only">Search accounts</span><input class="dinput" data-act="account-search" value="${esc(S.accountSearch)}" placeholder="Search team, contact or booking ID"></label>
     <label><span>From</span><input class="dinput" type="date" data-act="account-from" value="${esc(S.accountFrom)}"></label>
     <label><span>To</span><input class="dinput" type="date" data-act="account-to" value="${esc(S.accountTo)}"></label>
     <div class="optrow">${[['open','Open'],['paid','Settled'],['refunds','Refunded'],['cancelled','Closed'],['all','All']].map(([value,label])=>
       `<button class="${segCls(S.accountStatus===value,true)}" data-act="account-status" data-v="${value}">${label}</button>`).join('')}</div></div>
-    ${rows.length ? `<div class="acct-table"><div class="acct-head"><span>Date</span><span>Booking</span><span>Money</span><span>State</span><span>Action</span></div>${rows.map(rowHtml).join('')}</div>`
+    ${!ready ? `<div class="empty tight" role="status">${S.dataError?'Could not load this range. Adjust the dates or <button class="dbtn" data-act="retry-load">Retry</button>':'Loading accounts…'}</div>` : rows.length ? `<div class="acct-table"><div class="acct-head"><span>Date</span><span>Booking</span><span>Money</span><span>State</span><span>Action</span></div>${rows.map(rowHtml).join('')}</div>`
       : '<div class="empty tight">No accounts match these filters.</div>'}</section></main>`;
 }

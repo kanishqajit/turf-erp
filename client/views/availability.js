@@ -8,11 +8,6 @@ import { can, S } from '../state.js';
 
 const blockReady = () => S.blockReason.trim().length >= 15;
 
-/* The two board switches are shapes, not sentences: each pair is a picture of
-   the layout it produces, so the control states its own outcome and stops
-   spending a third of the bar on words the operator reads once. The names stay
-   on the title and the aria-label, which is where a screen reader and a hover
-   look for them anyway. */
 const VIEW_ICONS = {
   day:'<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="3" y="4" width="4.6" height="16" rx="1.6"/><rect x="9.7" y="4" width="4.6" height="16" rx="1.6"/><rect x="16.4" y="4" width="4.6" height="16" rx="1.6"/></svg>',
   week:'<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="6.5" y="4" width="11" height="16" rx="2"/></svg>',
@@ -20,8 +15,8 @@ const VIEW_ICONS = {
   compact:'<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="5" width="16" height="3.1" rx="1.55"/><rect x="4" y="10.5" width="16" height="3.1" rx="1.55"/><rect x="4" y="16" width="16" height="3.1" rx="1.55"/></svg>',
 };
 const iconOpt = (act, value, on, icon, name) =>
-  `<button class="modeopt is-ico${on ? ' on' : ''}" data-act="${act}" data-v="${value}"
-    aria-pressed="${on}" title="${esc(name)}" aria-label="${esc(name)}">${VIEW_ICONS[icon]}</button>`;
+  `<button class="modeopt labeled-mode${on ? ' on' : ''}" data-act="${act}" data-v="${value}"
+    aria-pressed="${on}" title="${esc(name)}" aria-label="${esc(name)}">${VIEW_ICONS[icon]}<span>${esc(name)}</span></button>`;
 const CAL_ICON='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="3"></rect><path d="M8 2.8v3.4M16 2.8v3.4M3 9.5h18"></path></svg>';
 const CHEV_ICON='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>';
 /* The column states its own load as a ring rather than a number alone: three
@@ -895,10 +890,10 @@ export function viewAvailability(){
   return `<main class="avail"><section class="avail-main">
     <div class="boardbar"><div class="boardbar-lead">${isDay?dayLead:weekLead}</div>${dayChips}
     <div class="boardbar-end"><div class="modeseg" role="group" aria-label="Board scope">
-    ${iconOpt('avail-mode','day',isDay,'day','All pitches')}
-    ${iconOpt('avail-mode','week',!isDay,'week','One pitch')}</div>${densitySeg}
-    <button class="pillbtn secondary" data-act="open-group">+ Group</button>
-    <button class="pillbtn" data-act="open-custom">+ Custom<span class="pill-long"> time slot</span></button></div></div>
+    ${iconOpt('avail-mode','day',isDay,'day','Day · all pitches')}
+    ${iconOpt('avail-mode','week',!isDay,'week','Week · one pitch')}</div>${densitySeg}
+    <button class="pillbtn secondary" data-act="open-group">+ Group booking</button>
+    <button class="pillbtn" data-act="open-custom">+ New booking</button></div></div>
     ${S.dataReady===false?'':carryNotice}
     ${S.dataReady===false?`<div class="empty" role="status">${S.dataError?'Availability could not load. <button class="dbtn" data-act="retry-load">Retry</button>':'Loading availability…'}</div>`:isDay?dayGrid:weekGrid}</section><aside class="aside${asidePanel?' has-panel':''}" data-scroll-pane="aside">${asideBody}
     <div class="loadcard"><div class="cap">${loadCap}</div>${S.dataReady===false?'Checking availability…':pitchLoad}</div>

@@ -34,7 +34,7 @@ function stateRange(){
 function accountRange(){
   const fromDate=new Date(TODAY),toDate=new Date(TODAY);
   fromDate.setDate(fromDate.getDate()-180);toDate.setDate(toDate.getDate()+180);
-  return { from:isoDate(fromDate),to:isoDate(toDate) };
+  return { from:S.accountFrom||isoDate(fromDate),to:S.accountTo||isoDate(toDate) };
 }
 
 const stateFlights=new Map();
@@ -47,12 +47,25 @@ function desktopQuery(){
     if(can('manager'))include.push('audit');
     if(can('owner'))include.push('users');
   }
-  const query=new URLSearchParams({from,to,include:include.join(','),accountsFrom:accounts.from,accountsTo:accounts.to});
+  const query=new URLSearchParams({from,to,include:include.join(',')});
+  if(include.includes('accounts')){query.set('accountsFrom',accounts.from);query.set('accountsTo',accounts.to);}
   if(S.groupOpen)query.set('groupRange','1');
   return query;
 }
 const keyFor=(query,userId=S.user?.id,epoch=sessionEpoch)=>epoch+':'+(userId||'')+':'+query;
-export const stateReady=()=>S.dataKey===keyFor(desktopQuery());
+export function stateReady(){
+  if(!S.dataKey)return false;
+  const query=desktopQuery();
+  if(S.dataKey===keyFor(query))return true;
+  // A freshly loaded Accounts/Settings response also contains the same board.
+  // Reuse that superset without replaying an older cached snapshot.
+  if(query.get('include'))return false;
+  const prefix=sessionEpoch+':'+(S.user?.id||'')+':';
+  if(!S.dataKey.startsWith(prefix))return false;
+  const loaded=new URLSearchParams(S.dataKey.slice(prefix.length));
+  loaded.set('include','');loaded.delete('accountsFrom');loaded.delete('accountsTo');
+  return loaded.toString()===query.toString();
+}
 export function ensureViewData(onSettled){
   if(!S.user||S.user.mustChangePassword)return;
   const key=keyFor(desktopQuery());
@@ -153,6 +166,7 @@ export async function signOut(){
 }
 
 export async function refreshOperationalState(options){
+  if(options?.ifNeeded&&stateReady()&&Date.now()-S.lastSyncedAt<15000)return;
   try{await loadState(options);}catch{/* The current request owns its error state. */}
 }
 

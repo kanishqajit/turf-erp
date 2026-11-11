@@ -8,7 +8,7 @@ const payload=(bookings=[])=>({user,csrfToken:'csrf',state:{bookings,holds:[],bl
 function client(fetch){
   const S={user:null,view:'availability',accounts:[],bookings:[],holds:[],blocks:[],audit:[],users:[],paymentEvents:[],csrf:'',busy:false};
   const context=vm.createContext({S,fetch,URLSearchParams,Date,Map,Set,console,AbortController,TODAY:new Date('2026-11-10T12:00:00Z'),isoDate:d=>d.toISOString().slice(0,10),weekStart:()=>new Date(Date.parse('2026-11-09T12:00:00Z')+(S.weekOffset||0)*7*86400000),can:role=>({operator:1,manager:2,owner:3}[S.user?.role]||0)>={operator:1,manager:2,owner:3}[role],applyTheme(){},loadPrefs(){},esc:x=>x});
-  vm.runInContext(source+'\nglobalThis.app={S,boot,loadState,mutate,signOut,stateReady,ensureViewData};',context);return context.app;
+  vm.runInContext(source+'\nglobalThis.app={S,boot,loadState,mutate,signOut,stateReady,ensureViewData,refreshOperationalState};',context);return context.app;
 }
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 
@@ -81,4 +81,23 @@ test('group availability requests cover all extended dates, bounded to ninety da
   a.S.user=user;a.S.groupOpen=true;a.S.gRange=84;a.S.dayIndex=6;await a.loadState();
   assert.equal(url.searchParams.get('groupRange'),'1');
   assert.equal((Date.parse(url.searchParams.get('to'))-Date.parse(url.searchParams.get('from')))/86400000,89);
+});
+
+
+test('date filters scope Accounts requests and its fresh board is reusable on return',async()=>{
+  const calls=[];const a=client(async path=>{calls.push(path);return Response.json({...payload([{id:'latest'}]),accounts:{bookings:[],payments:[]}});});
+  a.S.user=user;a.S.view='accounts';a.S.accountFrom='2026-11-01';a.S.accountTo='2026-11-30';
+  await a.loadState();const query=new URL(calls[0],'https://test').searchParams;
+  assert.equal(query.get('accountsFrom'),'2026-11-01');assert.equal(query.get('accountsTo'),'2026-11-30');
+  a.S.view='availability';assert.ok(a.stateReady());
+  await a.refreshOperationalState({ifNeeded:true});assert.equal(calls.length,1);
+  a.S.dayIndex=3;await a.refreshOperationalState({ifNeeded:true});assert.equal(calls.length,1);
+  a.S.weekOffset=1;assert.equal(a.stateReady(),false);await a.refreshOperationalState({ifNeeded:true});assert.equal(calls.length,2);
+  a.S.view='accounts';a.S.accountFrom='2026-10-01';assert.equal(a.stateReady(),false);
+});
+
+test('navigation reuse expires and never suppresses explicit background refresh',async()=>{
+  let calls=0;const a=client(async()=>{calls++;return Response.json(payload());});a.S.user=user;
+  await a.loadState();a.S.lastSyncedAt=Date.now()-16000;await a.refreshOperationalState({ifNeeded:true});assert.equal(calls,2);
+  await a.refreshOperationalState();assert.equal(calls,3);
 });

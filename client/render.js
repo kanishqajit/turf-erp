@@ -106,7 +106,7 @@ export function render(){
   if(S.user.mustChangePassword){document.getElementById('view').innerHTML=passwordChangeHtml();document.getElementById('modals').innerHTML='';if(changedContext)window.scrollTo(0,0);return;}
   const error=S.apiError?`<div class="error-banner app-error" role="alert"><span>${esc(S.apiError)}</span>
     <button data-act="dismiss-error" aria-label="Dismiss">&times;</button></div>`:'';
-  document.getElementById('view').innerHTML=error+(!S.dataReady&&S.view!=='availability'?'<main class="empty" role="status">'+(S.dataError?'This view could not load. <button class="dbtn" data-act="retry-load">Retry</button>':'Loading '+S.view+'…')+'</main>':VIEWS[S.view]());
+  document.getElementById('view').innerHTML=error+(!S.dataReady&&!['availability','accounts'].includes(S.view)?'<main class="empty" role="status">'+(S.dataError?'This view could not load. <button class="dbtn" data-act="retry-load">Retry</button>':'Loading '+S.view+'…')+'</main>':VIEWS[S.view]());
   const modalRoot=document.getElementById('modals'),hadModal=!!modalRoot.querySelector('[role="dialog"]');
   modalRoot.innerHTML=modalsHtml();
   const dialog=modalRoot.querySelector('[role="dialog"]'),blocked=!!dialog;

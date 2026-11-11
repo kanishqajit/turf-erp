@@ -1,4 +1,4 @@
-import { TODAY_DI } from './datetime.js';
+import { TODAY, TODAY_DI, isoDate } from './datetime.js';
 
 export const blankForm = () => ({ team:'', contact:'', notes:'', pay:'Payment at venue' });
 
@@ -14,7 +14,7 @@ export const S = {
   focusSession:null, timerAsk:null, timerAt:null, doneAsk:null, blockDetail:null,
   advAsk:null, advVal:'', advMode:'advance', advPayMode:'Cash', advReason:'',
   advCash:'', advUpi:'',
-  accountFocus:null, accountHistory:null, accountSearch:'', accountStatus:'open', accountFrom:'', accountTo:'',
+  accountFocus:null, accountHistory:null, accountSearch:'', accountStatus:'open', accountFrom:isoDate(new Date(TODAY.getFullYear(),TODAY.getMonth(),1)), accountTo:isoDate(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,0)),
   refundAsk:null, refundVal:'', refundPayMode:'Cash', refundReason:'',
   pendingKeys:{},
   actionAsk:null, actionReason:'',

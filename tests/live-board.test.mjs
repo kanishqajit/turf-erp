@@ -4,6 +4,7 @@ import {S} from '../client/state.js';
 import {TODAY,TODAY_DI,isoDate,bookingMinute,nowMin} from '../client/datetime.js';
 import {operationalSessions,sessionsToday,bookingAtTime} from '../client/domain.js';
 import {viewAvailability} from '../client/views/availability.js';
+import {viewAccounts} from '../client/views/accounts.js';
 import {modalsHtml} from '../client/modals.js';
 import {buildSessions} from '../client/views/sessions.js';
 globalThis.location={hostname:'futly.test'};
@@ -30,4 +31,11 @@ test('paused clocks use their original date instead of wrapping every midnight',
   const at=new Date(yesterday);at.setHours(23,50,0,0);
   assert.equal(bookingMinute(b,at.getTime()),1430);
   assert.ok(Math.abs(bookingMinute(b)-(1440+nowMin()))<0.1);
+});
+
+test('Accounts keeps date controls available when loading fails and excludes stale records',()=>{
+  Object.assign(S,{dataReady:false,dataError:'Invalid date range',accounts:[booking('Stale private row',isoDate(TODAY),'upcoming')],paymentEvents:[],accountFrom:'2026-12-01',accountTo:'2026-11-30',accountSearch:'',accountStatus:'all'});
+  const html=viewAccounts();assert.match(html,/data-act="account-from"/);assert.match(html,/data-act="account-period"/);
+  assert.match(html,/Adjust the dates/);assert.match(html,/data-act="account-export" disabled/);
+  assert.ok(!html.includes('Stale private row'));assert.match(html,/acct-stats" hidden/);
 });
