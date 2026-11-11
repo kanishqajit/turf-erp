@@ -1,3 +1,54 @@
+// One occupied-window rule for the API and calendar. Scheduled time is always
+// reserved; a running match also owns its remaining play and elapsed pauses.
+const dayNumber=date=>Date.parse(date+'T00:00:00Z')/86400000;
+function occupiedWindow(record,date=record.date,now=Date.now(),timeZone='Asia/Kolkata'){
+  const shift=(dayNumber(record.date)-dayNumber(date))*1440;
+  let start=record.start,end=record.end;
+  if(record.status==='running'){
+    const began=record.startedAt??record.start;
+    const paused=(record.pausedMilliseconds||0)+(record.pausedAt?Math.max(0,now-record.pausedAt):0);
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'})
+      .formatToParts(new Date(now)).reduce((a,p)=>(a[p.type]=p.value,a),{});
+    const current=(dayNumber(`${parts.year}-${parts.month}-${parts.day}`)-dayNumber(record.date))*1440+Number(parts.hour)*60+Number(parts.minute)+Number(parts.second)/60;
+    start=Math.min(start,began);
+    end=Math.max(end,began+record.end-record.start+paused/60000,current+1/60);
+  }
+  return {start:start+shift,end:end+shift};
+}
+function occupiedOnDay(record,date,now=Date.now(),timeZone='Asia/Kolkata'){
+  const window=occupiedWindow(record,date,now,timeZone);
+  const start=Math.max(0,window.start),end=Math.min(1440,window.end);
+  return end>start?{start,end}:null;
+}
+
+
+// Preview the same reserved window the server checks. The operator explicitly
+// chooses whether a late game keeps its booked end or takes its full duration.
+function sessionStartPlan(session, state, at, today, now){
+  const previous=state.bookings.find(b=>b.id!==session.id&&b.pitch===session.pitch&&b.status==='running');
+  let reason='';
+  if(session.date!==today)reason='Only today’s bookings can start here. Ask a manager to review this booking.';
+  else if(now<session.start-15)reason='This game can start 15 minutes before its booked time.';
+  else if(now>=session.end)reason='The booked time has ended. Ask a manager to review it or mark a no-show.';
+  else if(at>Math.floor(now)||at<session.start-15||at>=session.end)reason='Choose a start within the booking window, no later than now.';
+  const start=Math.min(session.start,at),end=Math.max(session.end,at+session.end-session.start);
+  const clashes=record=>{
+    if(record.pitch!==session.pitch)return false;
+    const window=occupiedOnDay(record,session.date);
+    return window&&window.start<end&&window.end>start;
+  };
+  const booking=state.bookings.find(b=>b.id!==session.id&&b.id!==previous?.id&&!['noshow','cancelled'].includes(b.status)&&clashes(b));
+  const hold=state.holds.find(h=>new Date(h.expiresAt).getTime()>Date.now()&&clashes(h));
+  const block=state.blocks.find(clashes);
+  // Ending a previous game keeps its scheduled slot reserved.
+  const previousWindow=previous?occupiedOnDay({...previous,status:'done'},session.date):null;
+  if(!reason&&previousWindow&&previousWindow.start<end&&previousWindow.end>start)reason='The previous game’s booked slot has not ended. Choose a later start.';
+  if(!reason&&booking)reason='This clock would overlap '+booking.team+'. Use the booked start to keep the scheduled end.';
+  if(!reason&&hold)reason='This clock would overlap a held slot.';
+  if(!reason&&block)reason='This clock would overlap maintenance.';
+  return {ok:!reason,reason,previous,end:at+session.end-session.start};
+}
+
 /* The whole ERP, with nothing behind it.
 
    mobile.js is an API client: every read and every write goes through

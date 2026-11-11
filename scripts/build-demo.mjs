@@ -28,9 +28,18 @@ import { join } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => readFile(join(root, name), 'utf8');
 
-const [css, js, backend] = await Promise.all([
+const [css, js, rawBackend, sessionStart, occupancy] = await Promise.all([
   read('mobile.css'), read('mobile.js'), read('demo/backend.js'),
+  read('client/session-start.js'), read('client/occupancy.js'),
 ]);
+
+/* The backend reaches for the same scheduling helpers the app does. They are
+   ES modules and it is loaded as a classic script, so their source is folded
+   in with the module syntax taken off — one copy of the rule, not two. */
+/* Line-ending agnostic. These files are CRLF in a Windows checkout, and a
+   pattern anchored on `;\n` leaves the import sitting there silently. */
+const inline = source => source.replace(/^[ \t]*import[^\n]*\n/gm, '').replaceAll('export ', '');
+const backend = `${inline(occupancy)}\n${inline(sessionStart)}\n${rawBackend}`;
 
 const HEAD = `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -73,7 +82,7 @@ ${SHELL}
 
 <!-- The backend goes first: it replaces fetch before the app can call it. -->
 <script src="/demo.backend.js"></script>
-<script src="/mobile.js"></script>
+<script type="module" src="/mobile.js"></script>
 
 </body>
 </html>
@@ -98,7 +107,7 @@ ${SHELL}
 ${backend}
 </script>
 
-<script>
+<script type="module">
 ${js}
 </script>
 
@@ -122,7 +131,7 @@ ${SHELL}
 ${backend}
 </script>
 
-<script>
+<script type="module">
 ${js}
 </script>
 `;
