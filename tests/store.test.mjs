@@ -512,3 +512,18 @@ test('a paused match protects remaining time across midnight',()=>{
     assert.ok(store.listState(date,date).bookings.some(row=>row.id===b.id));
   }finally{store.close();}
 });
+
+
+test('operators can end an unfinished earlier running match and a pitch cannot start another until it is ended',()=>{
+  const {store,owner,operator,date,minute}=middayFixture();
+  try{
+    const prior=new Date(date+'T12:00:00');prior.setDate(prior.getDate()-1);
+    const older=store.createBookings([{date:prior.toLocaleDateString('en-CA'),pitch:0,start:600,end:660,team:'Earlier running',contact:'9000000000'}],owner)[0];
+    const today=store.createBookings([{date,pitch:0,start:minute,end:minute+60,team:'Current booking',contact:'9000000001'}],operator)[0];
+    store.db.prepare("UPDATE bookings SET status='running',started_at=600 WHERE id=?").run(older.id);
+    expectCode('pitch_busy',()=>store.setStatus(today.id,'running',operator,'',today.start,today.version));
+    const done=store.setStatus(older.id,'done',operator,'',null,older.version);
+    assert.equal(done.status,'done');assert.ok(done.endedAt>=1440,'end time keeps the date instead of wrapping to zero-length');
+    assert.equal(store.setStatus(today.id,'running',operator,'',today.start,today.version).status,'running');
+  }finally{store.close();}
+});

@@ -540,7 +540,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
          could say which team was actually playing. */
       if (status === 'running'){
         const busy = db.prepare(`SELECT team FROM bookings
-          WHERE date=? AND pitch=? AND status='running' AND id<>?`).get(before.date, before.pitch, id);
+          WHERE pitch=? AND status='running' AND id<>?`).get(before.pitch, id);
         if (busy) fail(409, 'pitch_busy',
           `${PITCHES[before.pitch].name} still has ${busy.team} in play. End that session first.`);
       }
@@ -561,7 +561,9 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       const currentMinute = Number(timeParts.hour) * 60 + Number(timeParts.minute);
       const manual = atMinute !== null && atMinute !== undefined && atMinute !== '';
       if (manual && !Number.isFinite(Number(atMinute))) fail(400, 'invalid_time', 'A valid session time is required.');
-      const minute = manual ? Math.max(0, Math.min(1439, Math.round(Number(atMinute)))) : currentMinute;
+      const closingLive=status==='done'&&before.status==='running'&&before.date<=today;
+      const elapsedDays=(Date.parse(today+'T00:00:00Z')-Date.parse(before.date+'T00:00:00Z'))/86400000;
+      const minute = manual ? Math.max(0, Math.min(1439, Math.round(Number(atMinute)))) : currentMinute+(closingLive?elapsedDays*1440:0);
       /* Saying when play actually began is not a time correction. A team that
          walks on at 7:07 for a 7:00 slot can be given the clock from either
          minute, and the operator at the counter is the only one who knows
@@ -592,7 +594,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
             fail(409, 'session_elapsed', 'This booking has already ended. Resolve it as a no-show or ask a manager to correct its time.');
         }
         requireRole(actor, 'manager');
-      } else if (!manual && before.date !== today){
+      } else if (!manual && before.date !== today && !closingLive){
         fail(409, 'session_date_mismatch', 'Past or future sessions require a manager time correction with a reason.');
       }
       if (!manual && status === 'running' && minute < before.start - 15)
