@@ -117,8 +117,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .badge[hidden]{display:none}
 .topbar-end{display:flex;align-items:center;gap:10px;justify-self:end}
 .livepill{display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:999px;
-  background:var(--soft);font:700 12.5px var(--sans)}
-.livepill i{width:8px;height:8px;border-radius:50%;background:var(--lime);display:block}
+  background:var(--soft);font:700 12.5px var(--sans);white-space:nowrap}
+.livepill i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--lime);display:block}
 .topbar-end .today{display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;
   border:1.5px solid var(--edge3);font:600 12.5px var(--sans);color:var(--body);white-space:nowrap}
 .topbar-end .today svg{color:var(--muted2);flex:none}
@@ -2207,7 +2207,7 @@ button.pitchstatus:hover{transform:translateY(-2px);box-shadow:0 7px 18px rgba(2
    layout and the phone one, so the bar sheds in the order things stop earning
    their place rather than snapping straight to the mobile grid. The date goes
    first: the board bar states it again directly underneath. */
-@media(max-width:1250px){
+@media(max-width:1400px){
   .topbar-end .today{display:none}
 }
 @media(max-width:1120px){
