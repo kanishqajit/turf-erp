@@ -1,5 +1,5 @@
 import { DOWL, MON, PAY_FORM, PAY_MODES, PITCHES } from './constants.js';
-import { dateForAddress, durTxt, hours, nowMin, rng12, t12 } from './datetime.js';
+import { dateForAddress, isoDate, TODAY, durTxt, hours, nowMin, rng12, t12 } from './datetime.js';
 import { bookingWindow, clampTimerAt, esc, money, priceFor, segCls, sessionById, timerCeil, timerFloor, validContact, weekStart } from './domain.js';
 import { can, S } from './state.js';
 import { refundDialogHtml } from './views/accounts.js';
@@ -88,10 +88,10 @@ function doneDialogHtml(){
     <span class="modal-kicker">End this session?</span><button class="x" data-act="done-cancel" aria-label="Close end-session dialog">&times;</button></div><div class="plate">
     <div class="plate-kicker">Stopping at</div><div class="plate-time">${t12(now)}</div><div class="plate-day">${esc(session.team)}</div>
     <div class="plate-foot"><span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${rng12(session.start,session.end)}</b></div></div>
-    <p class="dnote">${early>0?'Ending '+early+' min before the booked end time. The timer stops now; the scheduled slot stays reserved.'
+    <p class="dnote">${session.date!==isoDate(TODAY)?'This earlier clock will be closed now. Its original booking date and payment history stay in the ledger.':early>0?'Ending '+early+' min before the booked end time. The timer stops now; the scheduled slot stays reserved.'
       :'Slot has run its full time. The timer stops now and the completed record remains in the ledger.'}</p>
     <div style="font:700 12.5px var(--sans);margin-top:10px;color:${unpaid?'var(--warn)':'var(--lime)'}">${unpaid
-      ?money(outstanding)+' is still outstanding — the session stays in Happening now until you collect it.':'Payment already settled.'}</div>
+      ?money(outstanding)+' is still outstanding — the balance remains in Accounts until collected.':'Payment already settled.'}</div>
     <div class="stack">${unpaid?'<button class="dbtn primary wide sm" data-act="done-collect">End and collect money</button>':''}
     <button class="dbtn wide xs" data-act="done-confirm">End session only</button><button class="dbtn ghost wide" data-act="done-cancel">Cancel</button></div></div></div>`;
 }

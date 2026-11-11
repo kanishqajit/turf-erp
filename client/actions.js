@@ -341,7 +341,10 @@ async function handleClick(event){
     case 'done-confirm':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
       {status:'done',version:current.version});if(result)S.doneAsk=null;break;}
     case 'done-collect':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
-      {status:'done',version:current.version});if(result){S.doneAsk=null;pickPay(sessionById(current.id),'Payment done');}break;}
+      {status:'done',version:current.version});if(result){S.doneAsk=null;
+        if(!sessionById(current.id)){S.view='accounts';S.accountFocus=current.id;await refreshOperationalState();}
+        const ended=sessionById(current.id);if(ended)pickPay(ended,'Payment done');
+        else S.apiError='Session ended. Open Accounts to collect its remaining balance.';}break;}
     case 'adv-cancel':if(S.advAsk)clearPendingKey('payment',S.advAsk);S.advAsk=null;S.advVal='';S.advReason='';S.advCash='';S.advUpi='';break;
     case 'adv-quick':S.advVal=value;break;
     case 'adv-mode':{const wasSplit=S.advPayMode==='Split';S.advPayMode=value;

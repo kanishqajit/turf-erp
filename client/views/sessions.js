@@ -185,7 +185,7 @@ export function viewSessions(){
     return `<button class="pitchstatus${live ? ' live' : due ? ' duepay' : ''}" data-act="${primary ? 'tl-block' : 'sessions-mode'}"
       data-id="${primary ? primary.id : ''}" data-v="schedule">
       <span><b>${esc(pitch.name)}</b><small>${esc(pitch.sub)}</small></span>
-      <strong>${live ? 'In play' : unresolved ? 'Resolve' : due ? 'Collect' : upcoming ? t12(upcoming.raw.start) : 'Idle'}</strong>
+      <strong>${live ? (live.raw.date<isoDate(TODAY)?'Needs review':'In play') : unresolved ? 'Resolve' : due ? 'Collect' : upcoming ? t12(upcoming.raw.start) : 'Idle'}</strong>
       <em>${primary ? esc(primary.team) : durTxt(booked) + ' booked'}</em></button>`;
   }).join('');
   const rowActionsFor = card => {

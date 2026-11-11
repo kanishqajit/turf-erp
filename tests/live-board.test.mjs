@@ -4,6 +4,7 @@ import {S} from '../client/state.js';
 import {TODAY,TODAY_DI,isoDate,bookingMinute,nowMin} from '../client/datetime.js';
 import {operationalSessions,sessionsToday,bookingAtTime} from '../client/domain.js';
 import {viewAvailability} from '../client/views/availability.js';
+import {modalsHtml} from '../client/modals.js';
 import {buildSessions} from '../client/views/sessions.js';
 globalThis.location={hostname:'futly.test'};
 const yesterday=new Date(TODAY);yesterday.setDate(yesterday.getDate()-1);
@@ -22,6 +23,7 @@ test('live board keeps old running matches visible for resolution without stretc
   const oldCard=buildSessions().find(c=>c.id===old.id);
   assert.ok(oldCard.running);assert.ok(oldCard.over);assert.equal(oldCard.statusLabel,'Needs review');assert.equal(oldCard.clock,'Unfinished');assert.ok(oldCard.range.includes(old.date));
   assert.ok(bookingMinute(old)>1440);
+  S.doneAsk=old.id;assert.match(modalsHtml(),/This earlier clock will be closed now/);S.doneAsk=null;
 });
 test('paused clocks use their original date instead of wrapping every midnight',()=>{
   const b=booking('Paused',isoDate(yesterday),'running');
