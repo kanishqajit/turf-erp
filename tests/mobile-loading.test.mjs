@@ -9,7 +9,7 @@ const payload=(bookings=[])=>({user,csrfToken:'csrf',state:{bookings,holds:[],bl
 const source=readFileSync(new URL('../mobile.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
 function client(fetch){
   const listeners={};
-  const context=vm.createContext({fetch,Response,URLSearchParams,Date,Map,Set,console,crypto,sessionStartPlan,occupiedOnDay,
+  const context=vm.createContext({fetch,Response,URLSearchParams,Date,Map,Set,console,crypto,sessionStartPlan,occupiedOnDay,location:{hostname:'futly.test'},
     matchMedia:()=>({matches:false,addEventListener(){}}),localStorage:{getItem:()=>null,setItem(){}},
     document:{hidden:false,querySelector:()=>null,documentElement:{dataset:{},style:{setProperty(){}}},addEventListener:(name,fn)=>{listeners[name]=fn;}},
     addEventListener(){},setInterval(){},EventSource:class{addEventListener(){}},setTimeout,requestAnimationFrame(){},cancelAnimationFrame(){}});
