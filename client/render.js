@@ -1,6 +1,6 @@
 import { DOW, MON } from './constants.js';
 import { isoDate, nowMin, t12, TODAY, TODAY_DI } from './datetime.js';
-import { chipCls, esc, sessionsToday } from './domain.js';
+import { chipCls, esc, operationalSessions } from './domain.js';
 import { refreshOperationalState, loginHtml, passwordChangeHtml, ensureViewData, stateReady } from './api.js';
 import { S, staffInitials } from './state.js';
 import { modalsHtml } from './modals.js';
@@ -32,7 +32,7 @@ export function renderTopbar(){
   const topbar=document.getElementById('topbar');
   if(!S.user||S.user.mustChangePassword){topbar.innerHTML='';return;}
   const {game,cash}=buildAlerts(),notifications=game.length+cash.length;
-  const running=sessionsToday().filter(session=>session.status==='running').length;
+  const running=operationalSessions().filter(session=>session.status==='running').length;
   topbar.innerHTML=`<div class="brand"><div class="mark">TF</div><div class="brand-txt"><b>Turf Operations</b>
     <span>Koramangala &middot; 3 pitches</span></div></div><nav class="tabs">${TABS.map(([view,text,short])=>
     `<button class="${chipCls(S.view===view)} big${view==='alerts'?' nav-alert':''}" data-act="goto" data-v="${view}"><span class="nav-full">${text}</span><span class="nav-short">${short}</span>${view==='alerts'
@@ -89,7 +89,10 @@ function playBoard(){
   });
 }
 
+let renderedContext=null;
 export function render(){
+  const context=S.user?S.view+(S.view==='availability'?':'+S.availMode+':'+S.weekOffset+':'+S.dayIndex:''):'login';
+  const changedContext=context!==renderedContext;renderedContext=context;
   ensureViewData(render);
   S.dataReady=stateReady();
   const active=document.activeElement;
@@ -99,8 +102,8 @@ export function render(){
   const scrolls=SCROLL_PANES.map(id=>{const element=scrollPane(id);return element?{id,top:element.scrollTop,left:element.scrollLeft}:null;}).filter(Boolean);
   renderTopbar();
   document.getElementById('topbar').inert=false;document.getElementById('view').inert=false;
-  if(!S.user){document.getElementById('view').innerHTML=loginHtml();document.getElementById('modals').innerHTML='';return;}
-  if(S.user.mustChangePassword){document.getElementById('view').innerHTML=passwordChangeHtml();document.getElementById('modals').innerHTML='';return;}
+  if(!S.user){document.getElementById('view').innerHTML=loginHtml();document.getElementById('modals').innerHTML='';if(changedContext)window.scrollTo(0,0);return;}
+  if(S.user.mustChangePassword){document.getElementById('view').innerHTML=passwordChangeHtml();document.getElementById('modals').innerHTML='';if(changedContext)window.scrollTo(0,0);return;}
   const error=S.apiError?`<div class="error-banner app-error" role="alert"><span>${esc(S.apiError)}</span>
     <button data-act="dismiss-error" aria-label="Dismiss">&times;</button></div>`:'';
   document.getElementById('view').innerHTML=error+(!S.dataReady&&S.view!=='availability'?'<main class="empty" role="status">'+(S.dataError?'This view could not load. <button class="dbtn" data-act="retry-load">Retry</button>':'Loading '+S.view+'…')+'</main>':VIEWS[S.view]());
@@ -110,7 +113,8 @@ export function render(){
   document.getElementById('topbar').inert=blocked;document.getElementById('view').inert=blocked;
   if(dialog&&!hadModal)(dialog.querySelector('input,textarea,select,button')||dialog).focus();
   scrolls.forEach(scroll=>{const element=scrollPane(scroll.id);if(element){element.scrollTop=scroll.top;element.scrollLeft=scroll.left;}});
-  if(keep){const next=keep.id?document.getElementById(keep.id):Array.from(document.querySelectorAll('input[data-act],textarea[data-act],select[data-act]')).find(el=>el.dataset.act===keep.act&&el.dataset.k===keep.k&&el.tagName===keep.tag);if(next){next.focus();if(keep.caret&&keep.caret[0]!=null){try{next.setSelectionRange(keep.caret[0],keep.caret[1]);}catch(_){}}}}
+  if(keep){const next=keep.id?document.getElementById(keep.id):Array.from(document.querySelectorAll('input[data-act],textarea[data-act],select[data-act]')).find(el=>el.dataset.act===keep.act&&el.dataset.k===keep.k&&el.tagName===keep.tag);if(next){next.focus({preventScroll:true});if(keep.caret&&keep.caret[0]!=null){try{next.setSelectionRange(keep.caret[0],keep.caret[1]);}catch(_){}}}}
+  if(changedContext)window.scrollTo(0,0);
   playBoard();
   syncStuck(false);
 }

@@ -1,6 +1,6 @@
 import { PITCHES } from '../constants.js';
-import { clock12, durTxt, isoDate, nowMin, rng12, t12, TODAY } from '../datetime.js';
-import { collectTotal, esc, money, sessionsToday } from '../domain.js';
+import { clock12, durTxt, isoDate, bookingMinute, nowMin, rng12, t12, TODAY } from '../datetime.js';
+import { collectTotal, esc, money, operationalSessions } from '../domain.js';
 import { S } from '../state.js';
 
 function relTime(minute){
@@ -12,7 +12,7 @@ function relTime(minute){
 
 export function buildAlerts(){
   const now = nowMin(), game = [], cash = [];
-  sessionsToday().forEach(session => {
+  operationalSessions().forEach(session => {
     const pitch = PITCHES[session.pitch];
     const outstanding = Math.max(0,session.amount - (session.discount || 0) - (session.collected || 0));
     if (session.status === 'upcoming'){
@@ -26,9 +26,9 @@ export function buildAlerts(){
         action:elapsed?'Resolve':'Start timer',act:elapsed?'alert-resolve':'alert-timer',id:session.id});
     }
     const liveEnd = (session.startedAt == null ? session.start : session.startedAt) + (session.end - session.start)+(session.pausedMilliseconds||0)/60000;
-    if (session.status === 'running' && !session.pausedAt && now > liveEnd){
+    if (session.status === 'running' && !session.pausedAt && bookingMinute(session) > liveEnd){
       game.push({kind:'game',at:liveEnd,urgent:true,tag:'Overtime',title:session.team+' · '+pitch.name,
-        body:'Running '+durTxt(now-liveEnd)+' past the timer end time.',action:'End session',act:'alert-done',id:session.id});
+        body:'Running '+durTxt(bookingMinute(session)-liveEnd)+' past the timer end time.',action:'End session',act:'alert-done',id:session.id});
     }
     if (session.pay !== 'Payment done' && session.status !== 'noshow'){
       cash.push({kind:'cash',at:session.end,urgent:session.status==='done',

@@ -73,7 +73,7 @@ export const blockAt = (di, hi, pitch, week = S.weekOffset) => {
 };
 export const bookingAtTime = (di, pitch, start, end = start + 30, week = S.weekOffset) => {
   const date = dateForAddress(week, di);
-  return S.bookings.find(record => record.status !== 'noshow' && record.status !== 'cancelled'
+  return S.bookings.slice().sort((a,b)=>(a.date!==date)-(b.date!==date)).find(record => record.status !== 'noshow' && record.status !== 'cancelled'
     && overlaps(record, date, pitch, start, end));
 };
 export const holdAtTime = (di, pitch, start, end = start + 30, week = S.weekOffset) => {
@@ -131,6 +131,7 @@ export function bookingWindowAt(week, di, pitch, start, duration){
 }
 export const bookingWindow = (di, pitch, start, duration) => bookingWindowAt(S.weekOffset, di, pitch, start, duration);
 
+export const operationalSessions = () => S.bookings.filter(record => record.date === isoDate(TODAY) || record.status === 'running');
 export const sessionsToday = () => S.bookings.filter(record => record.date === isoDate(TODAY));
 export const bookingById = id => S.bookings.find(booking => booking.id === id);
 export const sessionById = id => bookingById(id) || S.accounts.find(booking => booking.id === id);
@@ -151,7 +152,7 @@ export const clampTimerAt = (session, minute) =>
   Math.max(timerFloor(session), Math.min(timerCeil(session), Math.round(minute)));
 
 export const outstandingFor = session => Math.max(0, session.amount - (session.discount || 0) - (session.collected || 0));
-export const collectTotal = () => sessionsToday().filter(session => session.pay !== 'Payment done' && session.status !== 'noshow')
+export const collectTotal = () => operationalSessions().filter(session => session.pay !== 'Payment done' && session.status !== 'noshow')
   .reduce((total, session) => total + outstandingFor(session), 0);
 
 const barFill = percent => percent >= 75 ? 'var(--ink)' : percent >= 50 ? 'var(--lime)' : 'var(--lime-tint)';

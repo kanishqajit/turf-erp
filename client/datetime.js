@@ -99,3 +99,11 @@ export const addressForDayOffset = offset => {
   const absolute = TODAY_DI + offset;
   return { week:Math.floor(absolute / 7), di:((absolute % 7) + 7) % 7 };
 };
+
+// Clock minutes relative to the booking's date, so a match never restarts at midnight.
+export const bookingMinute = (booking, timestamp = null) => {
+  const at=timestamp==null?new Date(TODAY):new Date(timestamp);
+  const day=timestamp==null?isoDate(TODAY):isoDate(at);
+  const delta=(Date.parse(day+'T00:00:00Z')-Date.parse(booking.date+'T00:00:00Z'))/86400000;
+  return delta*1440+(timestamp==null?nowMin():minuteAt(timestamp));
+};

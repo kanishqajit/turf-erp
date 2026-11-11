@@ -12,6 +12,10 @@ const accountBookingById=id=>S.accounts.find(booking=>booking.id===id)||bookingB
 const pendingKey=(kind,id)=>S.pendingKeys[`${kind}:${id}`]||(S.pendingKeys[`${kind}:${id}`]=crypto.randomUUID());
 const clearPendingKey=(kind,id)=>delete S.pendingKeys[`${kind}:${id}`];
 function select(dayIndex,hourIndex,pitchIndex,startOffset=0){
+  const booking=bookingAtTime(dayIndex,pitchIndex??S.pitch,hours()[hourIndex]*60+startOffset);
+  if(booking&&booking.date!==dateForAddress(S.weekOffset,dayIndex)){
+    S.view='sessions';S.sessionsMode='now';S.focusSession=booking.id;clearCalendarPanels();return;
+  }
   S.sel={di:dayIndex,hi:hourIndex};
   if(pitchIndex!=null)S.pitch=pitchIndex;
   S.customOpen=false;S.groupOpen=false;S.formOpen=false;S.form=blankForm();S.dur=60;S.startOffset=startOffset;S.confirm=null;
@@ -240,6 +244,7 @@ async function handleClick(event){
       const held=['Cash','UPI','Card'].find(mode=>(session.collectedByMode&&session.collectedByMode[mode]||0)>0);
       S.advAsk=session.id;S.advMode='settle';S.advPayMode=held||'Cash';
       S.advVal='';S.advCash='';S.advUpi='';S.advReason='';break;}
+    case 'review-running':S.view='sessions';S.sessionsMode='now';clearCalendarPanels();break;
     case 'sessions-mode':S.sessionsMode=value;S.focusSession=null;break;
     case 'toggle-band':if(S.collapsedBands[value])delete S.collapsedBands[value];else S.collapsedBands[value]=true;savePrefs();break;
     case 'day-focus':S.dayIndex=+value;S.availMode='day';clearCalendarPanels();break;

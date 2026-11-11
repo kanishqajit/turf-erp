@@ -1,7 +1,7 @@
 import { occupiedOnDay } from '../occupancy.js';
 import { DOW, DOWL, END_HOUR, GROUP_DISCOUNTS, MON, PAY_FORM, PITCHES, PITCH_PALETTE, START_HOUR } from '../constants.js';
-import { clock12, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, minuteAt, relDay, rng12, slotRng12, t12,
-  TODAY_DI, toMin } from '../datetime.js';
+import { clock12, bookingMinute, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, minuteAt, relDay, rng12, slotRng12, t12,
+  TODAY, TODAY_DI, toMin } from '../datetime.js';
 import { blockAtTime, bookingAtTime, bookingWindow, bookingWindowAt, chipCls, coverage, esc, FLOODLIGHT_FEE, hbar, holdAtTime, needsFloodlights, priceFor,
   label, money, outstandingFor, pitchColorFor, segCls, sourceFor, statusAtTime, statusFor, tintFor, tintVars, validContact, weekStart } from '../domain.js';
 import { can, S } from '../state.js';
@@ -244,7 +244,7 @@ function liveStateFor(booking, di){
        readable, but visibly finished business. */
     return { mode:'settled', id:booking.id };
   }
-  if (offset !== 0) return null;
+  if (offset !== 0 || booking.date!==dateForAddress(S.weekOffset,di)) return null;
   const now = nowMin();
   /* The clock runs from the minute the operator said play began, not from the
      minute the slot was sold for — those differ whenever a team walks on late,
@@ -256,7 +256,7 @@ function liveStateFor(booking, di){
     const total = Math.max(1, booking.end - booking.start);
     const from = (booking.startedAt == null ? booking.start : booking.startedAt)+(booking.pausedMilliseconds||0)/60000;
     const until = from + total;
-    const at=booking.pausedAt?minuteAt(booking.pausedAt):now;
+    const at=bookingMinute(booking,booking.pausedAt||null);
     return { mode:'running', id:booking.id, start:from, end:until, paused:!!booking.pausedAt,at,
       pct:clamp((at - from) / total, 0, 1) * 100, over:at > until };
   }
@@ -428,8 +428,8 @@ function scheduleHtml(di, showNow){
   const date = dateForAddress(S.weekOffset, di), rows = hours().length * 2, pieces = [];
   const records = [];
   PITCHES.forEach((_, pitch) => {
-    S.bookings.filter(booking=>booking.pitch===pitch&&!['noshow','cancelled'].includes(booking.status))
-      .forEach(booking=>{const occupied=occupiedOnDay(booking,date);if(occupied&&occupied.end>startMin&&occupied.start<endMin)records.push({type:'booking',pitch,record:booking,draw:occupied});});
+    S.bookings.filter(booking=>booking.date===date&&booking.pitch===pitch&&!['noshow','cancelled'].includes(booking.status))
+      .forEach(booking=>records.push({type:'booking',pitch,record:booking}));
     S.holds.filter(hold => hold.expiresAt > Date.now() && hold.date === date && hold.pitch === pitch
       && hold.end > startMin && hold.start < endMin)
       .forEach(hold => records.push({ type:'hold', pitch, record:hold }));
@@ -500,8 +500,9 @@ function scheduleHtml(di, showNow){
   PITCHES.forEach((_, pitch) => {
     const selectedStart = S.sel && S.sel.di === di && S.pitch === pitch
       ? hours()[S.sel.hi] * 60 + S.startOffset : -1;
-    const taken = records.filter(item => item.pitch === pitch)
-      .map(item => [clamp(Math.floor(draw(item).start/30)*30,startMin,endMin),clamp(Math.ceil(draw(item).end/30)*30,startMin,endMin)])
+    const occupiedBookings=S.bookings.filter(b=>b.pitch===pitch&&!['noshow','cancelled'].includes(b.status)).map(b=>occupiedOnDay(b,date)).filter(Boolean);
+    const taken = [...occupiedBookings,...records.filter(item=>item.pitch===pitch&&item.type!=='booking').map(draw)]
+      .map(window => [clamp(Math.floor(window.start/30)*30,startMin,endMin),clamp(Math.ceil(window.end/30)*30,startMin,endMin)])
       .sort((a, b) => a[0] - b[0]);
     const merged = [];
     for (const window of taken){
@@ -889,6 +890,8 @@ export function viewAvailability(){
   const densitySeg = isDay ? `<div class="modeseg" role="group" aria-label="Board density">
     ${iconOpt('avail-dense','timeline',!dense,'timeline','Timeline')}
     ${iconOpt('avail-dense','compact',dense,'compact','Compact')}</div>` : '';
+  const carried=S.bookings.filter(b=>b.status==='running'&&b.date<isoDate(TODAY)&&(!isDay||occupiedOnDay(b,dateForAddress(S.weekOffset,di))));
+  const carryNotice=carried.length?`<section class="carry-notice" aria-label="Unfinished earlier sessions"><div><strong>${carried.length} unfinished session${carried.length===1?'':'s'} from earlier dates</strong><p>Review these clocks before selling overlapping time. Existing bookings are shown at their scheduled times.</p></div><button class="dbtn" data-act="review-running">Review sessions</button></section>`:'';
   return `<main class="avail"><section class="avail-main">
     <div class="boardbar"><div class="boardbar-lead">${isDay?dayLead:weekLead}</div>${dayChips}
     <div class="boardbar-end"><div class="modeseg" role="group" aria-label="Board scope">
@@ -896,6 +899,7 @@ export function viewAvailability(){
     ${iconOpt('avail-mode','week',!isDay,'week','One pitch')}</div>${densitySeg}
     <button class="pillbtn secondary" data-act="open-group">+ Group</button>
     <button class="pillbtn" data-act="open-custom">+ Custom<span class="pill-long"> time slot</span></button></div></div>
+    ${S.dataReady===false?'':carryNotice}
     ${S.dataReady===false?`<div class="empty" role="status">${S.dataError?'Availability could not load. <button class="dbtn" data-act="retry-load">Retry</button>':'Loading availability…'}</div>`:isDay?dayGrid:weekGrid}</section><aside class="aside${asidePanel?' has-panel':''}" data-scroll-pane="aside">${asideBody}
     <div class="loadcard"><div class="cap">${loadCap}</div>${S.dataReady===false?'Checking availability…':pitchLoad}</div>
     <p class="asidenote">${CAL_ICON}<span>${S.dataReady===false?'Availability not loaded':isDay?dayFree+' of '+dayTotal+' slots open on '+DOW[di]+' '+dayDate.getDate()

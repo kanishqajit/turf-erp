@@ -1,0 +1,31 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {S} from '../client/state.js';
+import {TODAY,TODAY_DI,isoDate,bookingMinute,nowMin} from '../client/datetime.js';
+import {operationalSessions,sessionsToday,bookingAtTime} from '../client/domain.js';
+import {viewAvailability} from '../client/views/availability.js';
+import {buildSessions} from '../client/views/sessions.js';
+globalThis.location={hostname:'futly.test'};
+const yesterday=new Date(TODAY);yesterday.setDate(yesterday.getDate()-1);
+const booking=(id,date,status)=>({id,date,status,pitch:0,start:600,end:660,startedAt:600,team:id,contact:'9000000000',amount:1800,discount:0,collected:0,pay:'Payment at venue',version:1,source:'counter'});
+test('live board keeps old running matches visible for resolution without stretching the calendar',()=>{
+  const old=booking('Earlier unfinished match',isoDate(yesterday),'running');
+  const current=booking('Today reservation',isoDate(TODAY),'upcoming');
+  Object.assign(S,{user:{id:'test',role:'operator'},dataReady:true,view:'availability',availMode:'day',dayIndex:TODAY_DI,weekOffset:0,bookings:[old,current],holds:[],blocks:[],dense:false});
+  assert.equal(operationalSessions().length,2);assert.equal(sessionsToday().length,1);
+  const html=viewAvailability();
+  assert.match(html,/1 unfinished session from earlier dates/);
+  assert.match(html,/Review sessions/);
+  assert.ok(!html.includes('is-running'),'old clocks must not become full-height timeline cards');
+  assert.match(html,/Today reservation/);
+  assert.equal(bookingAtTime(TODAY_DI,0,600).id,current.id,'today reservation takes selection priority over old occupancy');
+  const oldCard=buildSessions().find(c=>c.id===old.id);
+  assert.ok(oldCard.running);assert.ok(oldCard.over);assert.ok(oldCard.range.includes(old.date));
+  assert.ok(bookingMinute(old)>1440);
+});
+test('paused clocks use their original date instead of wrapping every midnight',()=>{
+  const b=booking('Paused',isoDate(yesterday),'running');
+  const at=new Date(yesterday);at.setHours(23,50,0,0);
+  assert.equal(bookingMinute(b,at.getTime()),1430);
+  assert.ok(Math.abs(bookingMinute(b)-(1440+nowMin()))<0.1);
+});

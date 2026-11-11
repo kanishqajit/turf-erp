@@ -2459,3 +2459,7 @@ button.pitchcol:focus-visible,.group-date:focus-visible{
   .group-date:hover,.schedule-bub:hover,.bub.sel,
   button:active:not(:disabled),.strow:active,.bcard:active,.rowcard:active{transform:none}
 }
+
+.carry-notice{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;margin:0 0 12px;border:1px solid var(--edge);border-radius:18px;background:var(--paper);color:var(--ink)}
+.carry-notice p{margin:5px 0 0;font-size:12px;line-height:1.5;opacity:.7}.carry-notice .dbtn{flex-shrink:0}
+@media(max-width:700px){.carry-notice{align-items:flex-start;flex-direction:column}}

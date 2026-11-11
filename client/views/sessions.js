@@ -1,6 +1,6 @@
 import { DAY_END, DAY_START, MATCH_STATES, PAY_STATES, PITCHES, SPAN, payShort } from '../constants.js';
-import { durTxt, nowMin, minuteAt, pos, rng12, t12 } from '../datetime.js';
-import { collectTotal, esc, money, segCls, sessionsToday, tintFor, tintVars } from '../domain.js';
+import { durTxt, isoDate, TODAY, bookingMinute, nowMin, minuteAt, pos, rng12, t12 } from '../datetime.js';
+import { collectTotal, esc, money, segCls, operationalSessions, sessionsToday, tintFor, tintVars } from '../domain.js';
 import { S } from '../state.js';
 
 const STATUS_ORDER = { running:0, upcoming:1, done:2, noshow:3 };
@@ -10,14 +10,14 @@ const SESSION_MODES = [
 
 export function buildSessions(){
   const now = nowMin();
-  return sessionsToday().slice()
+  return operationalSessions().slice()
     .sort((a, b) => (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]) || (a.start - b.start))
     .map(s => {
       const pitch = PITCHES[s.pitch];
       const running = s.status === 'running', upcoming = s.status === 'upcoming', done = s.status === 'done';
       const liveStart = (s.startedAt == null ? s.start : s.startedAt)+(s.pausedMilliseconds||0)/60000;
       const liveEnd = liveStart + (s.end - s.start);
-      const clockNow=s.pausedAt?minuteAt(s.pausedAt):now;
+      const clockNow=bookingMinute(s,s.pausedAt||null);
       const left = (running ? liveEnd : s.end) - (running?clockNow:now), over = running && left < 0;
       const late = upcoming && now > s.start, elapsedSlot = upcoming && now >= s.end;
       const elapsed = running ? clockNow - liveStart : 0;
@@ -32,7 +32,7 @@ export function buildSessions(){
       return {
         raw:s, id:s.id, pitchIndex:s.pitch, team:s.team, contact:s.contact,
         pitchName:pitch.name + ' · ' + pitch.sub, pitchShort:pitch.name, pitchSub:pitch.sub,
-        range:rng12(s.start,s.end), status:s.status,
+        range:(s.date!==isoDate(TODAY)?s.date+' · ':'')+rng12(s.start,s.end), status:s.status,
         running, upcoming, done, over, late, elapsedSlot, unpaid, duePay, pct, amount,
         awaitingPay:duePay, focused:S.focusSession === s.id,
         rowCls:over ? 'over' : running ? 'play' : duePay ? 'duepay' : late ? 'over' : upcoming ? 'upcoming' : s.status === 'noshow' ? 'noshow' : 'done',
@@ -132,7 +132,7 @@ function timelineHtml(pitchIndex){
 }
 
 export function viewSessions(){
-  const now = nowMin(), cards = buildSessions(), sessions = sessionsToday();
+  const now = nowMin(), cards = buildSessions(), sessions = operationalSessions();
   const runCount = sessions.filter(session => session.status === 'running').length;
   const overCount = cards.filter(card => card.over).length;
   const dueCount = cards.filter(card => card.awaitingPay).length;
