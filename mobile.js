@@ -68,9 +68,32 @@ function dayName(iso){
     : dateFor(-1) === iso ? 'Yesterday'
     : DOW[(d.getDay() + 6) % 7] + ' ' + d.getDate() + ' ' + MON[d.getMonth()];
 }
+/* "Wed 9" — what fits in the gutter the hour labels use. */
+function dayTag(iso){
+  const p = String(iso).split('-');
+  const d = new Date(+p[0], +p[1] - 1, +p[2]);
+  return DOW[(d.getDay() + 6) % 7] + ' ' + d.getDate();
+}
 const todayIso = () => dateFor(0);
 const minuteAt = timestamp => {const d=new Date(timestamp);return d.getHours()*60+d.getMinutes()+d.getSeconds()/60+d.getMilliseconds()/60000;};
-const nowMin = () => minuteAt(Date.now());
+/* The same local-development clock override the desk client reads, so the two
+   surfaces can be driven to the same hour when demonstrating or testing a shift
+   that is not happening right now. As there, it is ignored on any host that is
+   not localhost, so a fake clock can never ship to a venue.
+   Set it with localStorage['turf-erp:clock'] = '19:20', clear with removeItem. */
+const clockOverride = () => {
+  if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return null;
+  let raw = null;
+  try { raw = localStorage.getItem('turf-erp:clock'); } catch { return null; }
+  if (!raw) return null;
+  const [hour, minute] = String(raw).split(':').map(Number);
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+  return hour * 60 + (Number.isFinite(minute) ? minute : 0);
+};
+const nowMin = () => {
+  const forced = clockOverride();
+  return forced != null ? forced : minuteAt(Date.now());
+};
 
 /* ─── venue constants ─────────────────────────────────── */
 /* Mirrors client/constants.js. OVERVIEW.md flags that pitches and rates exist
@@ -149,7 +172,7 @@ function applyTheme(){
   /* Launched from the home screen the status bar sits over the header, so it
      has to turn with it or the notch stays pale over a black page. */
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', t === 'dark' ? '#000000' : '#16181C');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#1B1B1B' : '#16181C');
 }
 
 function loadPrefs(){
@@ -635,11 +658,22 @@ const weekCols = pitch => Array.from({ length:7 }, (_, i) => {
    so a week reads as a shape rather than a table. */
 const isWeek = cols => cols.length > 3;
 
+/* The one row that stays. Everything above it — the view picker, the day
+   chips — scrolls away, so this row has to carry the context they were
+   holding: which day, in the three-pitch view, and which pitch in the one-pitch
+   view. Both come off the columns themselves rather than off S, because home
+   builds this head too and is always today. */
 function boardHead(cols){
   const hs = hours(), week = isWeek(cols);
   const open = cols.map(c => hs.filter((h, hi) => cellState(c.date, hi, c.pitch) === 'free').length);
-  return `<div class="m-cols">
-    ${week ? '' : '<span class="m-cols-time">Time</span>'}
+
+  /* In the week the label spans the whole row: there is no gutter to put it in,
+     and the pitch is the one fact the seven date columns do not state. */
+  const lead = week
+    ? `<span class="m-cols-pitch">${esc(PITCHES[cols[0].pitch].name)}</span>`
+    : `<span class="m-cols-day">${esc(dayTag(cols[0].date))}</span>`;
+
+  return `<div class="m-cols">${lead}
     ${cols.map((c, i) => `<span class="m-col" title="${esc(c.title)}">
       <b>${esc(c.label)}</b>
       <small>${week ? esc(c.sub) : open[i] + ' of ' + hs.length + ' open'}</small></span>`).join('')}
@@ -746,7 +780,7 @@ function screenSlots(){
   const days = week ? '' : `<div class="m-days">${Array.from({ length:7 }, (_, i) => {
     const d = dateAt(i);
     return `<button class="m-day${i === S.dayIndex ? ' is-on' : ''}" data-act="day" data-v="${i}">
-      <small>${DOW[(d.getDay() + 6) % 7]}</small><b>${d.getDate()}</b></button>`;
+      <small>${DOW[(d.getDay() + 6) % 7]}</small> <b>${d.getDate()}</b></button>`;
   }).join('')}</div>`;
 
   const walkin = `<button class="m-walkin" data-act="go-sell">
@@ -767,12 +801,16 @@ function screenSlots(){
       ? 'on ' + PITCHES[S.pitch].name + ' this week' : 'on ' + dayLabel(S.dayIndex))}</em>
   </div>`;
 
-  /* The view picker, the dates and the column names ride together at the top of
-     the scroll: which day you are looking at is the question the grid under it
-     answers, so it must not scroll away from its own answer. */
+  /* Three rows of chrome used to be stuck to the top, which on a phone is most
+     of the screen before the first slot. Only the column head stays now — it
+     is the one row that answers "what am I looking at" for the grid scrolling
+     under it, and it restates the day or the pitch that the pickers above it
+     took away when they scrolled. */
   return `<div class="m-board${week ? ' is-week' : ''}" style="--ncols:${cols.length}">
     ${walkin}
-    <div class="m-pinned">${modeRow}${days}${boardHead(cols)}</div>
+    ${modeRow}
+    ${days}
+    ${boardHead(cols)}
     ${boardBands(cols, false)}
     ${legend}
   </div>`;

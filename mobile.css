@@ -432,19 +432,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 .m-trow.is-due .m-trow-end small{color:var(--amber-txt)}
 .m-trow.is-live .m-trow-end small{color:var(--lime)}
 
-/* The view picker, the date chips and the column names ride together. They are
-   one sticky block rather than three, because the question "which day" and the
-   answer under it must not come apart while scrolling. */
-.m-pinned{
-  position:sticky;top:0;z-index:6;margin:0 -12px;padding:0 12px;
-  background:var(--page);display:flex;flex-direction:column;gap:8px;
-}
- /* The wrapper already bleeds to the screen edge and pads back in, so its
-    children must not do it a second time. */
-.m-pinned .m-cols{position:static;margin:0;padding:0;box-shadow:none;background:none}
-.m-pinned .m-days{margin:0;padding:0 0 3px}
-.m-pinned .m-filters{padding-top:10px;flex-wrap:nowrap}
-.m-pinned .m-filter{flex:1 1 0;padding:0 4px}
+ .m-board .m-filters{flex-wrap:nowrap}
+.m-board .m-filter{flex:1 1 0;padding:0 4px;height:34px}
 
 /* One pitch across seven days. The hour gutter is gone: every tile names its
    own hour, which is what the gutter was for, and its 42px buys the width that
@@ -514,23 +503,26 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
 /* ─── the board ───────────────────────────────────────── */
 /* Side padding is 12px, not 16 — every pixel taken off the frame goes into the
    three columns, and a card at 87px has none to spare. */
-.m-board{padding:0 12px 22px;display:flex;flex-direction:column;gap:10px}
+.m-board{padding:0 12px 22px;display:flex;flex-direction:column;gap:8px}
+/* One line, not two. Stacked, seven of these ran to 62px of chrome above a
+   grid that had not started yet. */
 .m-days{
-  display:flex;gap:7px;overflow-x:auto;padding:0 12px 3px;margin:14px -12px 0;
+  display:flex;gap:6px;overflow-x:auto;padding:0 12px 2px;margin:0 -12px;
   scrollbar-width:none;
 }
 .m-days::-webkit-scrollbar{display:none}
 .m-day{
-  flex:none;width:58px;padding:9px 0;border-radius:16px;cursor:pointer;text-align:center;
+  flex:none;height:34px;padding:0 11px;border-radius:12px;cursor:pointer;
+  display:flex;align-items:baseline;gap:4px;
   border:1.5px solid var(--edge3);background:var(--paper);color:var(--ink);
 }
-.m-day small{display:block;font:600 9.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;opacity:.62}
-.m-day b{display:block;font:700 16px var(--sans)}
+.m-day small{font:600 9.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;opacity:.62}
+.m-day b{font:700 14px var(--sans)}
 .m-day.is-on{background:var(--fill-deep);border-color:var(--fill-deep);color:var(--on-fill)}
 
 .m-walkin{
   display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
-  padding:12px 14px;border-radius:20px;border:1.5px dashed var(--edge3);
+  padding:9px 13px;border-radius:16px;border:1.5px dashed var(--edge3);
   background:var(--paper);color:var(--ink);
 }
 .m-walkin>span{min-width:0}
@@ -561,16 +553,28 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
    one and you must change the other. */
 .m-cols{
   position:sticky;top:0;z-index:6;
-  margin:0 -12px;padding:8px 12px 9px;
+  margin:0 -12px;padding:6px 12px 7px;
   /* The board's own ground, not a bar of its own: the chips are what you see,
      and they read as the top of the grid rather than as a strip above it. It
      still has to be opaque, because rows scroll underneath it. */
   background:var(--page);
   display:grid;grid-template-columns:var(--gutter) repeat(var(--ncols,3),minmax(0,1fr));gap:7px;align-items:end;
 }
-.m-cols-time{
-  font:700 8.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted2);text-align:right;padding-bottom:5px;
+/* The gutter used to say "Time", which the hour labels under it already do.
+   It says which day instead — the one thing the day chips took with them when
+   they stopped being pinned. */
+.m-cols-day{
+  font:700 9.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink);text-align:right;align-self:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+/* The week has no gutter, so the pitch takes a line of its own across the top
+   of the head — it is the fact seven date columns cannot state. */
+.m-cols-pitch{
+  /* Ink, not lime: --lime-txt on the pale page is 3.6:1 at this size, and the
+     row of lime date chips directly under it already carries the accent. */
+  grid-column:1 / -1;font:700 10px var(--sans);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink);padding-bottom:1px;
 }
 /* The band is ink so the heads read as chrome rather than as one more row of
    the grid — that is what separates them, so the name can simply be the name. */
@@ -581,7 +585,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-of
    themes, so this head needs no dark value of its own. */
 .m-col{
   min-width:0;text-align:center;border-radius:11px;background:var(--head);
-  padding:5px 4px 6px;border:0;
+  padding:4px 4px 5px;border:0;
 }
 .m-col b{
   display:block;font:700 12.5px var(--sans);color:var(--on-accent);
@@ -942,32 +946,31 @@ input.m-field[type=time]{font:700 17px var(--sans);color-scheme:dark}
   /* An elevation ladder, darkest at the bottom. Nothing in here is a border
      doing a surface's job — things separate because they are lighter than what
      they sit on, which is the whole grammar of a dark screen. */
-  --page:#000;              /* the ground: nothing under it, so it is black */
-  --soft2:#121417;          /* the faintest lift: band heads, a well on a card */
-  --paper:#1D2024;          /* a card, a bubble, a row */
-  --soft:#23262B;           /* a quiet filled control ON one of those */
-  --raise:#2B2F35;          /* the ink surfaces: header, sheet, panel, live row */
-  /* These two were the deepest things on screen; against a black page there is
-     no room under it, so they become the darkest surface ABOVE the ground and
-     keep their meaning by staying well below a card. */
-  --fill-deep:#0C0E11;      /* the running clock, and a counter sale */
+  --page:#1B1B1B;           /* the ground */
+  --soft2:#1E1E1E;          /* the faintest lift: band heads, a well on a card */
+  --paper:#232323;          /* a slot, a card, a row, the nav */
+  --soft:#262626;           /* a quiet filled control ON one of those */
+  --raise:#0D0D0D;          /* the ink surfaces: header, sheet, panel, collect bar */
+  --fill-deep:#0D0D0D;      /* the running clock, and a counter sale */
 
   --ink:#F4F5F3;            /* the strongest TEXT; the fills are above */
   --body:#C2C6CB;
   --muted:#9298A0;
   --muted2:#8B9199;
-  --d-muted:#9298A0;
-  --d-body:#C2C6CB;
+  /* The greys that sit on a raised panel. They rise with it: --raise came up a
+     rung, and at the old value every field label on a sheet fell to 4.2:1. */
+  --d-muted:#A2A8B0;
+  --d-body:#C8CCD1;
 
   /* Borders stop drawing boxes. --edge matches the surface it outlines, so a
      card is a block of colour; only the ones that still carry meaning — the
      ring on an unselected chip — keep a value you can see. */
-  --edge:#1D2024;
-  --edge2:#24272C;
-  --edge3:#3A3F46;
-  --rule:#26292E;
-  --chrome:#33383F;         /* a secondary button inside a raised panel */
-  --field:#262A30;          /* an input well inside one */
+  --edge:#232323;           /* matches --paper, so a card is a block not a box */
+  --edge2:#303030;
+  --edge3:#3C3C3C;
+  --rule:#282828;
+  --chrome:#2E2E2E;         /* a secondary button inside a raised panel */
+  --field:#242424;          /* an input well inside one */
 
   --lime-pale:#232B14;      /* the pale lime surfaces become tinted darks */
   --lime-tint:#2D3818;
@@ -983,8 +986,8 @@ input.m-field[type=time]{font:700 17px var(--sans);color-scheme:dark}
   --amber-line:#3D3323;
   --amber-txt:#E8B94A;
   --owed-txt:#F0897C;
-  --band:#141619;           /* the week rail reads as a groove, not a stripe */
-  --frame:#000;
+  --band:#1A1A1A;           /* the week rail reads as a groove, not a stripe */
+  --frame:#111;
   color-scheme:dark;
 }
 /* Selected chips were an ink fill on a pale ground: the deepest thing on the
@@ -992,23 +995,33 @@ input.m-field[type=time]{font:700 17px var(--sans);color-scheme:dark}
    that is switched OFF. The console answered this the same way — the accent
    carries the pressed state in dark, because it is the only value that still
    rises. */
-/* The shift bar is ink on paper because the page under it is pale. Turn the
-   page off and it has nothing to contrast with: raised, it becomes the largest
-   and lightest thing on screen, and the chrome outweighs the board. So in this
-   theme it IS the page, and the grid floats on it. */
-[data-theme="dark"] .m-shift{background:var(--page)}
 [data-theme="dark"] .m-day.is-on,
 [data-theme="dark"] .m-filter.is-on{
   background:var(--lime);border-color:var(--lime);color:var(--on-accent)}
+/* The shift bar is a deep ink slab on paper, where the page is pale and the
+   contrast is the point. In the dark it is a THIRD value stacked above the
+   board — status strip, header, grid — and the eye reads two seams before it
+   reaches a single slot. It takes the page instead, so the board begins at the
+   top of the screen and the clock and counters sit directly on it. */
+[data-theme="dark"] .m-shift{background:var(--page)}
+
+/* On paper the back header is a white bar on a grey page — that contrast is
+   what makes it read as a header. In the dark it inverts into a LIGHTER slab
+   across the top of a darker board, which is a seam rather than a header, and
+   the availability grid wants to start at the top of the screen. So the bar
+   takes the page and its rule disappears with it; the title and the back
+   button carry the hierarchy on their own. */
+[data-theme="dark"] .m-bar{background:var(--page);border-bottom-color:var(--page)}
+
 /* A blocked hour is a hole in the grid. Its fill is --soft, which on paper is
    below the card and in this theme is above it — so here it is stated as its
    own recess rather than borrowed from a control. */
 [data-theme="dark"] .m-bub.is-blocked,
-[data-theme="dark"] .m-legend i.is-blocked{background:#101216;border-color:#101216}
+[data-theme="dark"] .m-legend i.is-blocked{background:#161616;border-color:#161616}
 /* A counter sale is the one bubble darker than the grid it sits in, so it needs
    an edge to stay a bubble rather than a gap. */
 [data-theme="dark"] .m-bub.is-booked.is-counter,
-[data-theme="dark"] .m-cell.is-plain.is-counter{border-color:#2E3238}
+[data-theme="dark"] .m-cell.is-plain.is-counter{border-color:#2E2E2E}
 /* Raised things cast; on paper this would be grime, in the dark it is the only
    other cue that something is in front. */
 [data-theme="dark"] .m-sheet-card{box-shadow:0 -14px 44px rgba(0,0,0,.62)}

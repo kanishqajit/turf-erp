@@ -1,2 +1,24 @@
-serve.py
-.vercelignore
+# Deny by default, then let the static front end back in.
+#
+# This file is the only thing standing between `vercel deploy` and a public
+# copy of certs/ca.key — the local CA's private key, which can mint a
+# certificate any device that trusts it will accept — and data/turf.sqlite,
+# which is the venue's real bookings and its password hashes. Neither is
+# covered by .gitignore, because Vercel does not read .gitignore.
+*
+
+!index.html
+!app.js
+!styles.css
+!client
+!client/**
+
+!mobile.html
+!mobile.js
+!mobile.css
+
+!manifest.webmanifest
+!icons
+!icons/**
+
+!vercel.json

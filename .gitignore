@@ -8,6 +8,7 @@ node_modules/
 supabase/.temp/
 .DS_Store
 tmp/
+.tools/
 
 # Local TLS material. The CA key can mint certificates any device that
 # trusts it will accept, so it never leaves this machine.
@@ -17,3 +18,5 @@ certs/
 dist/
 .wrangler/
 supabase/functions/futly-api/runtime/
+data/dev-login.txt
+demo/artifact.html

@@ -2,8 +2,13 @@ FROM node:24-alpine
 
 WORKDIR /app
 COPY package.json server.mjs index.html app.js styles.css ./
+# The phone app and the things that make it installable. server.mjs serves all
+# of these from disk per request, so a build that omits them 404s /m and every
+# asset the manifest names.
+COPY mobile.html mobile.js mobile.css manifest.webmanifest ./
 COPY client ./client
 COPY server ./server
+COPY icons ./icons
 RUN mkdir -p /app/data && chown -R node:node /app
 
 USER node

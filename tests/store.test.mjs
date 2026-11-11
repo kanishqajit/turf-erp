@@ -527,3 +527,14 @@ test('operators can end an unfinished earlier running match and a pitch cannot s
     assert.equal(store.setStatus(today.id,'running',operator,'',today.start,today.version).status,'running');
   }finally{store.close();}
 });
+
+test('only the owner may mark a booking as coming through the app', () => {
+  const { store, owner, operator } = fixture();
+  try {
+    const base = { date:'2026-08-24', pitch:0, start:600, end:660, team:'Demo FC', contact:'+91 90000 00050' };
+    const [viaOwner] = store.createBookings([{ ...base, source:'app' }], owner);
+    assert.equal(viaOwner.source, 'app');
+    const [viaOperator] = store.createBookings([{ ...base, date:'2026-08-25', source:'app' }], operator);
+    assert.equal(viaOperator.source, 'counter');
+  } finally { store.close(); }
+});

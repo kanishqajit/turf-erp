@@ -5,7 +5,7 @@ import { join } from 'node:path';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const output=join(root,'dist');
 // Explicit public assets only: never copy server sources, ledgers, or secrets.
-const files=['index.html','app.js','styles.css','mobile.html','mobile.js','mobile.css','manifest.webmanifest'];
+const files=['index.html','app.js','styles.css','mobile.html','mobile.js','mobile.css','manifest.webmanifest','demo.html','demo.webmanifest'];
 await rm(output,{recursive:true,force:true});
 await mkdir(join(output,'book'),{recursive:true});
 await writeFile(join(output,'release.json'),JSON.stringify({commit:process.env.GITHUB_SHA || 'local'})+'\n');

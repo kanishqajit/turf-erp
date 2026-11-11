@@ -320,7 +320,10 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       if (pct > 20 && actor.role !== 'owner') fail(403, 'discount_limit', 'Discounts above 20% require owner approval.');
     }
     return { ...window, id:randomUUID(), team, contact, notes:clean(input.notes, 500),
-      source:'counter', kind,
+      /* The counter is the only source an operator can create. The owner may mark
+         a booking as having come through the app, so the app's own flow can be
+         exercised and demonstrated before a real app is posting to this API. */
+      source:input.source === 'app' && actor.role === 'owner' ? 'app' : 'counter', kind,
       groupType:kind === 'group' ? clean(input.groupType, 30) : null,
       groupId:kind === 'group' ? clean(input.groupId, 80) || randomUUID() : null,
       groupColor, discountAmount,
