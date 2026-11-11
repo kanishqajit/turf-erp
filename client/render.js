@@ -37,7 +37,7 @@ export function renderTopbar(){
     <span>Koramangala &middot; 3 pitches</span></div></div><nav class="tabs">${TABS.map(([view,text,short])=>
     `<button class="${chipCls(S.view===view)} big${view==='alerts'?' nav-alert':''}" data-act="goto" data-v="${view}"><span class="nav-full">${text}</span><span class="nav-short">${short}</span>${view==='alerts'
       ?`<span class="badge"${notifications?'':' hidden'}>${notifications}</span>`:''}</button>`).join('')}</nav><div class="topbar-end">
-    <span class="livepill"><i></i>${running} in play &middot; ${t12(nowMin())}</span>
+    <span class="livepill"><i></i>${running} open clock${running===1?'':'s'} &middot; ${t12(nowMin())}</span>
     <span class="today"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="3"></rect><path d="M8 2.8v3.4M16 2.8v3.4M3 9.5h18"></path></svg><span>${DOW[TODAY_DI]}, ${TODAY.getDate()} ${MON[TODAY.getMonth()]}</span></span>
     <button class="cog${S.view==='settings'?' on':''}" title="Settings" aria-label="Settings" data-act="goto" data-v="settings">
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

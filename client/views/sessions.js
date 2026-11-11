@@ -15,6 +15,7 @@ export function buildSessions(){
     .map(s => {
       const pitch = PITCHES[s.pitch];
       const running = s.status === 'running', upcoming = s.status === 'upcoming', done = s.status === 'done';
+      const earlier=running&&s.date<isoDate(TODAY);
       const liveStart = (s.startedAt == null ? s.start : s.startedAt)+(s.pausedMilliseconds||0)/60000;
       const liveEnd = liveStart + (s.end - s.start);
       const clockNow=bookingMinute(s,s.pausedAt||null);
@@ -36,7 +37,7 @@ export function buildSessions(){
         running, upcoming, done, over, late, elapsedSlot, unpaid, duePay, pct, amount,
         awaitingPay:duePay, focused:S.focusSession === s.id,
         rowCls:over ? 'over' : running ? 'play' : duePay ? 'duepay' : late ? 'over' : upcoming ? 'upcoming' : s.status === 'noshow' ? 'noshow' : 'done',
-        statusLabel:s.pausedAt?'Paused':over ? 'Overtime' : running ? 'In play' : elapsedSlot ? 'Unresolved' : late ? 'Late start' : upcoming ? 'Up next'
+        statusLabel:earlier?'Needs review':s.pausedAt?'Paused':over ? 'Overtime' : running ? 'In play' : elapsedSlot ? 'Unresolved' : late ? 'Late start' : upcoming ? 'Up next'
           : done ? (unpaid ? 'Payment due' : 'Completed') : 'No-show',
         statusCls:over||late ? 'over' : running ? 'play' : duePay ? 'duepay' : '',
         sourceLabel:s.source === 'app' ? 'App' : 'Counter', sourceCls:s.source === 'app' ? 'via-app' : '',
@@ -51,13 +52,13 @@ export function buildSessions(){
            only the magnitude. It used to repeat the pill in the card's largest
            type ("ended 4h 06m ago · unresolved"), which wrapped onto its own
            line and cost more height than the team name. */
-        clock:running ? (over ? '+' + durTxt(-left) + ' over' : durTxt(left) + ' left')
+        clock:earlier?'Unfinished':running ? (over ? '+' + durTxt(-left) + ' over' : durTxt(left) + ' left')
           : elapsedSlot ? durTxt(now-s.end) + ' ago'
           : late ? durTxt(now-s.start) + ' late'
           : upcoming ? 'in ' + durTxt(s.start - now)
           : done ? 'ended ' + t12(s.endedAt || s.end) : '—',
-        elapsedLabel:running ? durTxt(Math.max(0,elapsed)) + ' played · ' : '',
-        liveNote:duePay ? 'Match finished · collect payment to clear' : '',
+        elapsedLabel:earlier?'Clock left open · ':running ? durTxt(Math.max(0,elapsed)) + ' played · ' : '',
+        liveNote:earlier?'Review the earlier booking and end its clock when confirmed.':duePay ? 'Match finished · collect payment to clear' : '',
         actions,
       };
     });
@@ -141,7 +142,7 @@ export function viewSessions(){
   const toCollect = collectTotal();
   const activeMode = SESSION_MODES.some(([mode]) => mode === S.sessionsMode) ? S.sessionsMode : 'now';
   const statbar = `<div class="statbar">${[
-    ['In play',String(runCount),runCount>0?' live':''],
+    ['Open clocks',String(runCount),runCount>0?' live':''],
     ['Overtime',String(overCount),overCount>0?' danger':''],
     ['Payment due',String(dueCount),dueCount>0?' cash':''],
     ['To collect',money(toCollect),toCollect>0?' cash':''],

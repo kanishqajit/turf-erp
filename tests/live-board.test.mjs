@@ -20,7 +20,7 @@ test('live board keeps old running matches visible for resolution without stretc
   assert.match(html,/Today reservation/);
   assert.equal(bookingAtTime(TODAY_DI,0,600).id,current.id,'today reservation takes selection priority over old occupancy');
   const oldCard=buildSessions().find(c=>c.id===old.id);
-  assert.ok(oldCard.running);assert.ok(oldCard.over);assert.ok(oldCard.range.includes(old.date));
+  assert.ok(oldCard.running);assert.ok(oldCard.over);assert.equal(oldCard.statusLabel,'Needs review');assert.equal(oldCard.clock,'Unfinished');assert.ok(oldCard.range.includes(old.date));
   assert.ok(bookingMinute(old)>1440);
 });
 test('paused clocks use their original date instead of wrapping every midnight',()=>{
