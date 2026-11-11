@@ -1,13 +1,25 @@
-/* Fold the phone app into one file that needs nothing.
+/* The phone app with nothing behind it.
 
-   Output is demo.html: the real mobile.css and the real mobile.js, with
-   demo/backend.js wedged in front of them so fetch never leaves the page.
-   No server, no certificate, no sign-in, no network after the fonts load.
+   Two shapes come out of here, because they are read in two different places.
 
-     node scripts/build-demo.mjs
+   demo.html — for the site. The deployment sends
+   `Content-Security-Policy: script-src 'self'`, so an inline <script> is
+   refused and the page comes up blank. This one is a shell that loads the
+   site's own /mobile.css and /mobile.js, with /demo.backend.js in front of
+   them. That constraint turns out to be the better design: the demonstration
+   loads the identical files the real console loads, so it cannot quietly
+   drift into being a replica of the app instead of the app.
 
-   Rebuild it whenever mobile.js or mobile.css changes — the demonstration
-   should always be the current app, not a fork of it. */
+   demo-standalone.html — everything inlined, for opening from a file or
+   sending to somebody. No CSP applies to file://, and nothing is fetched.
+
+   demo/artifact.html — the inlined build without a document shell, for a host
+   that supplies its own <head>.
+
+   In all three, demo/backend.js replaces fetch with an in-memory ledger, so
+   no request ever leaves the page after the fonts load.
+
+     node scripts/build-demo.mjs */
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -16,29 +28,17 @@ import { join } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => readFile(join(root, name), 'utf8');
 
-const [css, mobile, backend,occupancy,startRules] = await Promise.all([
-  read('mobile.css'), read('mobile.js'), read('demo/backend.js'),read('client/occupancy.js'),read('client/session-start.js'),
+const [css, js, backend] = await Promise.all([
+  read('mobile.css'), read('mobile.js'), read('demo/backend.js'),
 ]);
 
-// Inline the shared ESM helpers too: the demo must keep working as a single
-// local file, with no module fetches and no connection to the production API.
-const inline=source=>source.replace(/^import .*;\n/gm,'').replaceAll('export ','');
-const js=[inline(occupancy),inline(startRules),inline(mobile)].join('\n');
-
-/* The app ends with `render(); boot();`, and boot() asks the API who is signed
-   in. The backend below answers that instantly, so nothing else has to change:
-   this is the shipped app, not a copy with the awkward parts removed. */
-const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
+const HEAD = `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1B1B1B">
 <title>Futly Console — demonstration</title>
 
 <!-- Its own manifest id, so Android installs this beside the real console
-     rather than replacing it. Served from the site, it installs chrome-less;
-     opened from a file it is still a working page, just not installable. -->
+     rather than over it. -->
 <link rel="manifest" href="/demo.webmanifest">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png">
@@ -49,22 +49,50 @@ const html = `<!DOCTYPE html>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700&display=swap">`;
 
-<style>
-${css}
-</style>
-</head>
-<body>
-
-<div class="m-phone">
+const SHELL = `<div class="m-phone">
   <div class="m-app">
     <header id="mHeader"></header>
     <div id="mBody"></div>
     <div id="mDock"></div>
   </div>
   <div id="mSheet"></div>
-</div>
+</div>`;
+
+/* ── for the site ─────────────────────────────────────── */
+const hosted = `<!DOCTYPE html>
+<html lang="en">
+<head>
+${HEAD}
+<link rel="stylesheet" href="/mobile.css">
+</head>
+<body>
+
+${SHELL}
+
+<!-- The backend goes first: it replaces fetch before the app can call it. -->
+<script src="/demo.backend.js"></script>
+<script src="/mobile.js"></script>
+
+</body>
+</html>
+`;
+await writeFile(join(root, 'demo.html'), hosted);
+await writeFile(join(root, 'demo.backend.js'), backend);
+
+/* ── for a file, or for sending ───────────────────────── */
+const standalone = `<!DOCTYPE html>
+<html lang="en">
+<head>
+${HEAD}
+<style>
+${css}
+</style>
+</head>
+<body>
+
+${SHELL}
 
 <script>
 ${backend}
@@ -77,29 +105,18 @@ ${js}
 </body>
 </html>
 `;
+await writeFile(join(root, 'demo-standalone.html'), standalone);
 
-await writeFile(join(root, 'demo.html'), html);
-
-/* The same build without a document shell, for a host that supplies its own
-   <head> — an Artifact, or any page embed. Assembled from the same pieces
-   rather than unpicked out of the file above, so the two cannot drift. */
+/* ── for an artifact ──────────────────────────────────── */
 const fragment = `<title>Futly Console — demonstration</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700&display=swap">
 
 <style>
 ${css}
-/* The host page paints its own ground behind this one. */
 html,body{height:100%;background:#1B1B1B}
 </style>
 
-<div class="m-phone">
-  <div class="m-app">
-    <header id="mHeader"></header>
-    <div id="mBody"></div>
-    <div id="mDock"></div>
-  </div>
-  <div id="mSheet"></div>
-</div>
+${SHELL}
 
 <script>
 ${backend}
@@ -112,6 +129,8 @@ ${js}
 await writeFile(join(root, 'demo', 'artifact.html'), fragment);
 
 const kb = n => (n / 1024).toFixed(1) + 'KB';
-console.log(`\n  demo.html           ${kb(html.length)}  (css ${kb(css.length)} · app ${kb(js.length)} · backend ${kb(backend.length)})`);
-console.log(`  demo/artifact.html  ${kb(fragment.length)}  same build, no document shell`);
-console.log('  Offline after the fonts load. No server, no sign-in, no sync.\n');
+console.log(`\n  demo.html              ${kb(hosted.length)}  shell — loads /mobile.css and /mobile.js from the site`);
+console.log(`  demo.backend.js        ${kb(backend.length)}  the in-memory ledger, served alongside`);
+console.log(`  demo-standalone.html   ${kb(standalone.length)}  everything inlined, for a file`);
+console.log(`  demo/artifact.html     ${kb(fragment.length)}  inlined, no document shell`);
+console.log('  No request leaves the page after the fonts load.\n');

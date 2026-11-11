@@ -234,6 +234,16 @@
     };
   }
 
+  /* The app also opens a live ledger stream, which fetch never sees. Left
+     alone it is a persistent connection to a server that is not there: on the
+     hosted copy it would actually connect, and offline it retries forever.
+     This stands in for it and never fires, because nothing changes the board
+     here except the person holding the phone. */
+  window.EventSource = class {
+    constructor(url){ this.url = url; this.readyState = 1; this.withCredentials = false; }
+    addEventListener(){} removeEventListener(){} close(){ this.readyState = 2; }
+  };
+
   const real = window.fetch.bind(window);
 
   window.fetch = async function(input, init){
