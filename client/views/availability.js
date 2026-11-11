@@ -1,4 +1,4 @@
-import { occupiedOnDay } from '../occupancy.js';
+import { occupiedOnDay, playingDuration } from '../occupancy.js';
 import { DOW, DOWL, END_HOUR, GROUP_DISCOUNTS, MON, PAY_FORM, PITCHES, PITCH_PALETTE, START_HOUR } from '../constants.js';
 import { clock12, bookingMinute, dateAt, dateForAddress, daysFromToday, hourRng12, hours, hourT12, isoDate, nowMin, minuteAt, relDay, rng12, slotRng12, t12,
   TODAY, TODAY_DI, toMin } from '../datetime.js';
@@ -248,14 +248,14 @@ function liveStateFor(booking, di){
      placement and its height, and a session that overruns its slot says so by
      going over rather than by being redrawn somewhere else. */
   if (booking.status === 'running'){
-    const total = Math.max(1, booking.end - booking.start);
+    const total = Math.max(1, playingDuration(booking));
     const from = (booking.startedAt == null ? booking.start : booking.startedAt)+(booking.pausedMilliseconds||0)/60000;
     const until = from + total;
     const at=bookingMinute(booking,booking.pausedAt||null);
     return { mode:'running', id:booking.id, start:from, end:until, paused:!!booking.pausedAt,at,
       pct:clamp((at - from) / total, 0, 1) * 100, over:at > until };
   }
-  if (booking.status !== 'upcoming' || now >= booking.end) return null;
+  if (booking.status !== 'upcoming') return null;
   if (now < booking.start - ARRIVAL_WINDOW) return null;
   return { mode:S.checkedIn[booking.id] ? 'ready' : 'arriving', id:booking.id };
 }

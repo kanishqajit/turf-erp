@@ -198,6 +198,24 @@ test('scoped hosted APIs preserve domain rules, identities, authentication and d
       const ended=(await pg.query('SELECT status FROM futly.bookings WHERE id=$1',[previous.id])).rows[0];assert.equal(ended.status,'done');
       assert.ok(result.desktop.state.bookings.some(x=>x.id===b.id&&x.status==='running'));
     });
+    await t.test('late-start shifts and playing duration persist atomically through scoped PostgreSQL commits',async tt=>{
+      tt.mock.timers.enable({apis:['Date'],now:new Date(day(0)+'T12:40:00Z')});
+      const created=[];
+      for(const [start,team]of [[1080,'Late scoped team'],[1140,'Shifted scoped team'],[1200,'Third scoped team']]){
+        created.push((await call(admin,'/api/bookings','POST',{date:day(0),pitch:0,start,end:start+60,team,contact:'9000000000'},201)).data.bookings[0]);
+      }
+      const [late,next,third]=created;
+      const body={version:late.version,atMinute:1090,policy:'shift',adjustments:[
+        {id:next.id,version:next.version,start:1150,end:1210},{id:third.id,version:third.version,start:1210,end:1270}]};
+      rpcCalls=[];
+      const data=(await call(staff,`/api/bookings/${late.id}/start?refresh=desktop&${range}`,'POST',body)).data;
+      assert.deepEqual(rpcCalls,['/rest/v1/rpc/futly_api_snapshot','/rest/v1/rpc/futly_ledger_commit']);
+      assert.equal(data.booking.startedAt,1090);assert.equal(data.booking.playDuration,60);
+      assert.ok(data.desktop.state.bookings.some(b=>b.id===next.id&&b.start===1150));
+      const rows=(await pg.query('SELECT id,start,\"end\",play_duration,total_amount FROM futly.bookings WHERE id=ANY($1)',[created.map(b=>b.id)])).rows;
+      assert.equal(Number(rows.find(b=>b.id===late.id).play_duration),60);
+      assert.equal(Number(rows.find(b=>b.id===next.id).start),1150);assert.equal(Number(rows.find(b=>b.id===next.id).total_amount),next.amount);
+    });
     await t.test('session heartbeats and revocation persist across fresh snapshots',async()=>{
       await pg.query('UPDATE futly.sessions SET last_seen_at=$1 WHERE token_hash=$2',[Date.now()-60000,createHash('sha256').update(staff.cookie.split('=')[1]).digest('hex')]);
       await call(staff,'/api/auth/me');const session=(await pg.query('SELECT last_seen_at FROM futly.sessions WHERE token_hash=$1',[createHash('sha256').update(staff.cookie.split('=')[1]).digest('hex')])).rows[0];assert.ok(session.last_seen_at>Date.now()-10000);

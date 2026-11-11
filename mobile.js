@@ -1,3 +1,4 @@
+import { startOptionsHtml } from './client/start-options.js';
 /* ═══════════════════════════════════════════════════════
    TURF OPERATIONS — mobile, built to the Claude Design
    handoff (Turf ERP Mobile.dc.html).
@@ -22,7 +23,7 @@
    ═══════════════════════════════════════════════════════ */
 
 import { sessionStartPlan } from './client/session-start.js';
-import { occupiedOnDay } from './client/occupancy.js';
+import { occupiedOnDay, playingDuration } from './client/occupancy.js';
 
 /* ─── the API ─────────────────────────────────────────── */
 /* This app is a second front end over the console's server, not a second copy
@@ -131,7 +132,7 @@ const S = {
   collapsedBands:{},
   /* Check-in and clock state are read from the shared ledger. */
   checkedIn:{},
-  tender:'UPI', splitCash:'', timerAt:null,
+  tender:'UPI', splitCash:'', timerAt:null,timerPolicy:'scheduled',timerEdits:[],
   /* Empty compatibility state for older phone preferences. */
   paused:{},
   form:blankForm(), blockReason:'', cancelReason:'', releaseReason:'',
@@ -510,7 +511,7 @@ function liveMode(b){
    Mirrors liveStateFor() in client/views/availability.js — the two clocks have
    to agree or the counter and the pitch call time a quarter of an hour apart. */
 function liveWindow(b){
-  const total = Math.max(1, b.end - b.start);
+  const total = Math.max(1, playingDuration(b));
   const from = (b.startedAt == null ? b.start : b.startedAt)+(b.pausedMilliseconds||0)/60000;
   return { from, until:from + total, total,
     at:b.pausedAt ? minuteAt(b.pausedAt) : null };
@@ -523,7 +524,7 @@ function sweepPauses(){}
 /* What the server will accept as a start minute, so a bound the operator
    cannot cross shows as a dead button rather than an error after the fact. */
 const timerFloor = b => b.start - 15;
-const timerCeil = b => Math.min(Math.floor(nowMin()), b.end - 1);
+const timerCeil = b => Math.min(Math.floor(nowMin()), 1439);
 const clampTimerAt = (b, m) => Math.max(timerFloor(b), Math.min(timerCeil(b), Math.round(m)));
 
 const bookingOn = (date, pitch, hi) => cellAt(date, pitch, hi).booking || null;
@@ -634,7 +635,7 @@ function cardHtml(b, mode){
         <b class="m-face-cue">${elapsed?'Unresolved':mode === 'ready' ? 'Ready' : late > 0 ? 'Late' : 'Starting soon'}</b>
         <span class="m-face-sub">${esc(b.team)}</span>
       </button>
-      <span class="m-tray">${elapsed?cta('no-show',b.id,null,'No-show'):mode === 'ready'
+      <span class="m-tray">${elapsed?cta('start',b.id,null,'Start')+cta('no-show',b.id,null,'No-show','is-quiet'):mode === 'ready'
         ? cta('undo-check-in', b.id, 'undo', '', 'is-quiet is-icon') + cta('start', b.id, null, 'Start')
         : cta('check-in',b.id,'check','','is-quiet is-icon')+cta('start',b.id,null,busy?'Handover':'Start')}</span>
     </div>`;
@@ -1312,63 +1313,17 @@ function sheetHtml(){
      assuming now. Bounds are the server's: no earlier than fifteen minutes
      before the booked start, no later than this minute. */
   if (sh.kind === 'timer'){
-    const b = sessById(sh.id);
-    if (!b) return '';
-    const p = PITCHES[b.pitch], now = Math.floor(nowMin());
-    const at = clampTimerAt(b, S.timerAt == null ? now : S.timerAt);
-    const dur = b.end - b.start, ends = at + dur;
-    const floor = timerFloor(b), ceil = timerCeil(b);
-    const late = at - b.start;
-    /* Before the booked start there is no "from session start" to offer — that
-       minute has not happened. The option stays, stating the minute it would
-       use, but dead, so the choice reads the same either side of kick-off. */
-    const plan=sessionStartPlan(b,S,at,todayIso(),nowMin());
-    const busy=!plan.ok||S.busy;
-    const bookedReach = clampTimerAt(b, b.start) === b.start;
-    const onBooked = bookedReach && at === b.start;
-    const onNow = !onBooked && at === clampTimerAt(b, now);
-    const choice = (mode, lbl, minute, on, live) => `<button
-      class="m-opt is-two${on ? ' is-on' : ''}" data-act="timer-mode" data-v="${mode}"
-      ${live ? '' : 'disabled'}><b>${esc(lbl)}</b><i>${esc(t12(minute))}</i></button>`;
-    const nudge = (d, lbl, ok) => `<button class="m-step" data-act="timer-nudge" data-v="${d}"
-      ${ok ? '' : 'disabled'} aria-label="${d > 0 ? 'One minute later' : 'One minute earlier'}">${lbl}</button>`;
-    /* Nobody started the clock and the match is already running: the operator
-       knows how long is left, not what minute it began. Working back from the
-       remaining time is the question they can actually answer. An option that
-       would have to be clamped is shown dead rather than quietly landing on a
-       different minute than it promises. */
-    const forLeft = m => clampTimerAt(b, Math.round(now) + m - dur);
-    const leftOpt = m => {
-      const want = Math.round(now) + m - dur, live = forLeft(m) === want && m <= dur;
-      return `<button class="m-opt${at === want && live ? ' is-on' : ''}" data-act="timer-left"
-        data-v="${m}"${live ? '' : ' disabled'}>${esc(mins(m) + ' left')}</button>`;
-    };
-
-    return sheetShell('Start match timer', 'is-play', t12(at),
-      b.team + ' · ' + p.name + ' · ' + rng12(b.start, b.end),
-      `<div class="m-kvs">${kv('Runs for', mins(dur))}${kv('Ends at', t12(ends))}</div>
-      <span class="m-label is-spaced">Run the clock from</span>
-      <div class="m-opts">${choice('now', 'Now', clampTimerAt(b, now), onNow, true)}${
-        choice('booked', 'Session start', b.start, onBooked, bookedReach)}</div>
-      <span class="m-label is-spaced">Or say how long is left</span>
-      <div class="m-opts">${[15, 20, 30, 45].map(leftOpt).join('')}</div>
-      <span class="m-label is-spaced">Adjust by the minute</span>
-      <div class="m-stepper">${nudge(-1, '−', at > floor)}
-        <div class="m-stepper-now">${esc(t12(at))}</div>${nudge(1, '+', at < ceil)}</div>
-      <p class="m-sheet-sub" style="margin-top:12px">${esc(late > 0
-        ? 'Team went on ' + mins(late) + ' after the booked start, so the clock ends ' + mins(ends - b.end) + ' late at ' + t12(ends) + '.'
-        : late < 0
-        ? 'Starting ' + mins(-late) + ' early. The clock runs its full ' + mins(dur) + ' and ends at ' + t12(ends) + '.'
-        : 'The clock runs the booked slot exactly, ending at ' + t12(ends) + '.')}</p>
+    const b=sessById(sh.id);if(!b)return '';
+    const at=clampTimerAt(b,S.timerAt==null?nowMin():S.timerAt);
+    const plan=sessionStartPlan(b,S,at,todayIso(),nowMin(),{policy:S.timerPolicy,edits:S.timerEdits}),busy=!plan.ok||S.busy;
+    return sheetShell('Start game','is-play',t12(at),b.team+' · '+PITCHES[b.pitch].name+' · Booked '+rng12(b.start,b.end),
+      startOptionsHtml(b,plan)+`<details class="start-origin"><summary>Correct the actual start time</summary><div class="m-opts">
+      <button class="m-opt" data-act="timer-mode" data-v="now">Start now · ${t12(nowMin())}</button>
+      <button class="m-opt" data-act="timer-mode" data-v="booked"${b.start>nowMin()?' disabled':''}>Booked start</button></div>
+      <div class="m-stepper"><button class="m-step" data-act="timer-nudge" data-v="-1"${at<=timerFloor(b)?' disabled':''} aria-label="One minute earlier">−</button><b>${t12(at)}</b><button class="m-step" data-act="timer-nudge" data-v="1"${at>=timerCeil(b)?' disabled':''} aria-label="One minute later">+</button></div></details>
       ${plan.reason?`<p class="m-alert" role="alert">${esc(plan.reason)}</p>`:''}
-      ${plan.previous?`<p class="m-sheet-sub">Confirm ${esc(plan.previous.team)} has left the pitch. Their clock ends and any unpaid balance stays in Accounts.</p>`:''}
-      <div class="m-stack">
-        <button class="m-btn is-wide is-tall ${busy ? '' : 'is-lime'}" data-act="timer-start"
-          data-id="${esc(b.id)}"${busy ? ' disabled' : ''}>${busy
-            ? esc(S.busy?'Saving…':'Review the start time')
-            : esc((plan.previous?'End previous & start':'Start timer')+' · '+t12(at))}</button>
-        ${btn('Cancel', 'close-sheet', 'is-dark is-wide')}
-      </div>`);
+      ${plan.previous?`<p class="m-sheet-sub">Confirm ${esc(plan.previous.team)} has left the pitch. Their clock ends; any unpaid balance stays in Accounts.</p>`:''}
+      <div class="m-stack"><button class="m-btn is-wide is-tall is-lime" data-act="timer-start" data-id="${esc(b.id)}"${busy?' disabled':''}>${S.busy?'Saving…':plan.adjustments.length?'Confirm changes & start':plan.previous?'End previous & start':'Start now'}</button>${btn('Cancel','close-sheet','is-dark is-wide')}</div>`);
   }
 
   /* — a booking on the live board — */
@@ -1937,15 +1892,16 @@ document.addEventListener('click', e => {
     case 'undo-check-in': mutate('/api/bookings/'+id+'/check-in',{checked:false,version:b.version});return;
     case 'start': {
       const now=clampTimerAt(b,nowMin());
-      S.timerAt=sessionStartPlan(b,S,now,todayIso(),nowMin()).ok?now:clampTimerAt(b,b.start);
+      S.timerAt=now;S.timerPolicy=nowMin()>=b.end?'full':'scheduled';S.timerEdits=[];
       S.sheet={kind:'timer',id};break;
     }
+    case 'timer-policy':S.timerPolicy=v;S.timerEdits=[];break;
     case 'timer-mode':
-      S.timerAt = clampTimerAt(sessById(sh.id), v === 'booked' ? sessById(sh.id).start : nowMin());
+      S.timerAt = clampTimerAt(sessById(sh.id), v === 'booked' ? sessById(sh.id).start : nowMin());S.timerEdits=[];
       break;
     case 'timer-left': {
       const s = sessById(sh.id);
-      S.timerAt = clampTimerAt(s, Math.round(nowMin()) + (+v) - (s.end - s.start));
+      S.timerAt = clampTimerAt(s, Math.round(nowMin()) + (+v) - playingDuration(s));
       break;
     }
     case 'timer-nudge': {
@@ -1956,9 +1912,9 @@ document.addEventListener('click', e => {
     case 'timer-start': {
       const s = sessById(id);
       const atMinute = clampTimerAt(s, S.timerAt == null ? nowMin() : S.timerAt);
-      const plan=sessionStartPlan(s,S,atMinute,todayIso(),nowMin());
+      const plan=sessionStartPlan(s,S,atMinute,todayIso(),nowMin(),{policy:S.timerPolicy,edits:S.timerEdits});
       if(!plan.ok){S.apiError=plan.reason;render();return;}
-      mutate('/api/bookings/'+id+'/start',{atMinute,version:s.version,
+      mutate('/api/bookings/'+id+'/start',{atMinute,version:s.version,policy:plan.policy,adjustments:plan.adjustments.map(({id,version,start,end})=>({id,version,start,end})),
         previous:plan.previous?{id:plan.previous.id,version:plan.previous.version}:undefined}).then(result=>{
           if(result){S.sheet=null;S.timerAt=null;render();}
         });
@@ -2132,7 +2088,8 @@ document.addEventListener('input', e => {
   const el = e.target.closest('[data-model]');
   if (!el) return;
   const path = el.dataset.model;
-  if (path.startsWith('form.')) S.form[path.slice(5)] = el.value;
+  if(path==='timer-shift'){const start=toMin(el.value);if(Number.isFinite(start))S.timerEdits=S.timerEdits.filter(row=>row.id!==el.dataset.id).concat({id:el.dataset.id,start});}
+  else if (path.startsWith('form.')) S.form[path.slice(5)] = el.value;
   else S[path] = el.value;
   renderSoon();
 });

@@ -45,7 +45,7 @@ function askTimer(id){
   const session=sessionById(id);
   if(!session)return;
   S.timerAsk=id;
-  S.timerAt=suggestedStart(session);
+  S.timerAt=suggestedStart(session);S.timerPolicy=nowMin()>=session.end?'full':'scheduled';S.timerEdits=[];
 }
 
 function pickPay(session,status){
@@ -331,19 +331,20 @@ async function handleClick(event){
     case 'noshow':setMatch(session,'noshow');break;
     case 'undo-noshow':setMatch(session,'upcoming');break;
     case 'collect':pickPay(session,'Payment done');break;
+    case 'timer-policy':S.timerPolicy=value;S.timerEdits=[];break;
     case 'timer-cancel':S.timerAsk=null;S.timerAt=null;break;
     /* Two presets and a minute nudge, all writing the same field: the dialog
        has one answer to give, and the presets are just the two minutes worth
        naming. */
     case 'timer-mode':{const current=sessionById(S.timerAsk);if(!current)break;
-      S.timerAt=clampTimerAt(current,value==='booked'?current.start:nowMin());break;}
+      S.timerAt=clampTimerAt(current,value==='booked'?current.start:nowMin());S.timerEdits=[];break;}
     case 'timer-nudge':{const current=sessionById(S.timerAsk);if(!current)break;
-      S.timerAt=clampTimerAt(current,S.timerAt+(+value));break;}
+      S.timerAt=clampTimerAt(current,S.timerAt+(+value));S.timerEdits=[];break;}
     case 'timer-start':{const current=sessionById(S.timerAsk);if(!current)break;
       const atMinute=clampTimerAt(current,S.timerAt),plan=startPlan(current,atMinute);
       if(!plan.ok){S.apiError=plan.reason;break;}
       const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/start`,
-        {version:current.version,atMinute,previous:plan.previous?{id:plan.previous.id,version:plan.previous.version}:undefined});
+        {version:current.version,atMinute,policy:plan.policy,adjustments:plan.adjustments.map(({id,version,start,end})=>({id,version,start,end})),previous:plan.previous?{id:plan.previous.id,version:plan.previous.version}:undefined});
       if(result){S.timerAsk=null;S.timerAt=null;}break;}
     case 'done-cancel':S.doneAsk=null;break;
     case 'done-confirm':{const current=sessionById(S.doneAsk);const result=await mutate(`/api/bookings/${encodeURIComponent(current.id)}/status`,
@@ -419,6 +420,7 @@ async function handleSubmit(event){
 async function handleInput(event){
   const target=event.target.closest('[data-act]');if(!target)return;
   switch(target.dataset.act){
+    case 'timer-shift':{const start=toMin(target.value);if(!Number.isFinite(start))return;S.timerEdits=(S.timerEdits||[]).filter(row=>row.id!==target.dataset.id).concat({id:target.dataset.id,start});render();break;}
     case 'form-field':S.form[target.dataset.k]=target.value;refreshGate();break;
     case 'c-field':S[target.dataset.k]=target.value;refreshGate();break;
     case 'c-start':S.cStart=target.value;render();break;

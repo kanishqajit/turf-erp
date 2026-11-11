@@ -11,7 +11,7 @@ export const S = {
   availMode:'day', sel:null, dense:false, checkedIn:{}, theme:'light',
   formOpen:false, form:blankForm(), blockOpen:false, blockReason:'', holdPct:0,
   confirm:null, dur:60, startOffset:0,
-  focusSession:null, timerAsk:null, timerAt:null, doneAsk:null, blockDetail:null,
+  focusSession:null, timerAsk:null, timerAt:null, timerPolicy:'scheduled',timerEdits:[], doneAsk:null, blockDetail:null,
   advAsk:null, advVal:'', advMode:'advance', advPayMode:'Cash', advReason:'',
   advCash:'', advUpi:'',
   accountFocus:null, accountHistory:null, accountSearch:'', accountStatus:'open', accountFrom:isoDate(new Date(TODAY.getFullYear(),TODAY.getMonth(),1)), accountTo:isoDate(new Date(TODAY.getFullYear(),TODAY.getMonth()+1,0)),

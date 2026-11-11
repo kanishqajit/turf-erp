@@ -1,3 +1,4 @@
+import { playingDuration } from '../occupancy.js';
 import { PITCHES } from '../constants.js';
 import { clock12, durTxt, isoDate, bookingMinute, nowMin, rng12, t12, TODAY } from '../datetime.js';
 import { collectTotal, esc, money, operationalSessions } from '../domain.js';
@@ -25,7 +26,7 @@ export function buildAlerts(){
           : 'Booked '+rng12(session.start,session.end)+'. Start the timer when they take the pitch.',
         action:elapsed?'Resolve':'Start timer',act:elapsed?'alert-resolve':'alert-timer',id:session.id});
     }
-    const liveEnd = (session.startedAt == null ? session.start : session.startedAt) + (session.end - session.start)+(session.pausedMilliseconds||0)/60000;
+    const liveEnd = (session.startedAt == null ? session.start : session.startedAt) + playingDuration(session)+(session.pausedMilliseconds||0)/60000;
     if (session.status === 'running' && !session.pausedAt && bookingMinute(session) > liveEnd){
       game.push({kind:'game',at:liveEnd,urgent:true,tag:'Overtime',title:session.team+' · '+pitch.name,
         body:'Running '+durTxt(bookingMinute(session)-liveEnd)+' past the timer end time.',action:'End session',act:'alert-done',id:session.id});

@@ -1,3 +1,4 @@
+import { sessionStartPlan } from '../client/session-start.js';
 import { occupiedWindow, occupiedOnDay } from '../client/occupancy.js';
 import { Buffer } from 'node:buffer';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
@@ -210,6 +211,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
   if (!bookingColumns.has('checked_in_at')) db.exec('ALTER TABLE bookings ADD COLUMN checked_in_at INTEGER');
   if (!bookingColumns.has('paused_at')) db.exec('ALTER TABLE bookings ADD COLUMN paused_at INTEGER');
   if (!bookingColumns.has('paused_milliseconds')) db.exec('ALTER TABLE bookings ADD COLUMN paused_milliseconds INTEGER NOT NULL DEFAULT 0');
+  if (!bookingColumns.has('play_duration')) db.exec('ALTER TABLE bookings ADD COLUMN play_duration INTEGER CHECK(play_duration IS NULL OR play_duration BETWEEN 1 AND 1440)');
   const paymentColumns = new Set(db.prepare('PRAGMA table_info(payment_events)').all().map(column => column.name));
   if (!paymentColumns.has('reference')) db.exec("ALTER TABLE payment_events ADD COLUMN reference TEXT NOT NULL DEFAULT ''");
   if (!paymentColumns.has('idempotency_key')) db.exec('ALTER TABLE payment_events ADD COLUMN idempotency_key TEXT');
@@ -290,7 +292,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
   function assertAvailable(window, { ignoreBookingId = null, ignoreHoldId = null } = {}){
     const conflict=db.prepare("SELECT * FROM bookings WHERE pitch=? AND status NOT IN ('cancelled','noshow') AND (? IS NULL OR id<>?)")
       .all(window.pitch,ignoreBookingId,ignoreBookingId).find(row=>{
-        const occupied=occupiedWindow({...row,startedAt:row.started_at,pausedAt:row.paused_at,pausedMilliseconds:row.paused_milliseconds},window.date,nowMs(),timeZone);
+        const occupied=occupiedWindow({...row,startedAt:row.started_at,pausedAt:row.paused_at,pausedMilliseconds:row.paused_milliseconds,playDuration:row.play_duration},window.date,nowMs(),timeZone);
         return occupied.start<window.end&&occupied.end>window.start;
       });
     if(conflict)fail(409,'booking_conflict',`This time overlaps ${conflict.team}, including any remaining playing time.`,{id:conflict.id,start:conflict.start,end:conflict.end});
@@ -366,7 +368,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
     return { id:row.id, date:row.date, pitch:row.pitch, start:row.start, end:row.end,
       team:row.team, contact:row.contact, notes:row.notes, source:row.source, kind:row.kind,
       groupType:row.group_type, groupId:row.group_id, groupColor:row.group_color, status:row.status,
-      startedAt:row.started_at, endedAt:row.ended_at, amount:row.total_amount,
+      startedAt:row.started_at, endedAt:row.ended_at, playDuration:row.play_duration??null, amount:row.total_amount,
       checkedInAt:row.checked_in_at,pausedAt:row.paused_at,pausedMilliseconds:row.paused_milliseconds||0,
       discount:row.discount_amount, collected:paid,
       collectedByMode:{ Cash:Number(row.collected_cash || 0), UPI:Number(row.collected_upi || 0), Card:Number(row.collected_card || 0) },
@@ -626,6 +628,7 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       const pausedTotal=['running','upcoming'].includes(status)?0:
         (before.pausedMilliseconds||0)+(before.pausedAt?Math.max(0,nowMs()-before.pausedAt):0);
       db.prepare('UPDATE bookings SET checked_in_at=NULL,paused_at=NULL,paused_milliseconds=? WHERE id=?').run(pausedTotal,id);
+      if(status==='upcoming')db.prepare('UPDATE bookings SET play_duration=NULL WHERE id=?').run(id);
       const after = getBooking(id);
       audit(actor, `booking.status.${status}`, 'booking', id, before, after, reason);
       return after;
@@ -641,6 +644,18 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       if(!booking)fail(404,'not_found','Booking not found.');
       assertVersion(booking,input.version);
       if(booking.status!=='upcoming')fail(409,'not_startable','This game is no longer waiting to start. Refresh and review it.');
+      let plan;
+      if(input.policy!==undefined){
+        const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()).reduce((a,p)=>(a[p.type]=p.value,a),{});
+        const state=listState(booking.date,booking.date),today=parts.year+'-'+parts.month+'-'+parts.day;
+        plan=sessionStartPlan(booking,state,Number(input.atMinute),today,Number(parts.hour)*60+Number(parts.minute),{policy:input.policy,edits:input.adjustments||[],closeMinute:CLOSE_MIN});
+        if(!plan.ok)fail(409,'start_conflict',plan.reason);
+        const confirmed=input.adjustments||[];
+        if(confirmed.length!==plan.adjustments.length||plan.adjustments.some(change=>!confirmed.some(row=>row.id===change.id&&row.version===change.version&&row.start===change.start&&row.end===change.end)))
+          fail(409,'schedule_changed','The following bookings changed. Review the refreshed preview before starting.');
+        if(plan.previous&&(!input.previous||input.previous.id!==plan.previous.id||input.previous.version!==plan.previous.version))
+          fail(409,'handover_changed','Review and confirm the previous game before handing over.');
+      }
       if(input.previous){
         const previous=getBooking(input.previous.id);
         if(!previous||previous.id===id||previous.pitch!==booking.pitch||previous.status!=='running')
@@ -648,7 +663,18 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
         assertVersion(previous,input.previous.version);
         setStatus(previous.id,'done',actor,'Pitch handover',null,previous.version);
       }
-      return setStatus(id,'running',actor,'',input.atMinute,input.version);
+      if(!plan)return setStatus(id,'running',actor,'',input.atMinute,input.version);
+      for(const change of plan.adjustments){
+        const before=getBooking(change.id);assertVersion(before,change.version);
+        db.prepare('UPDATE bookings SET start=?,end=?,version=version+1,updated_at=? WHERE id=?').run(change.start,change.end,isoNow(),change.id);
+        audit(actor,'booking.rescheduled','booking',change.id,before,getBooking(change.id),'Late-start adjustment; agreed charge preserved');
+      }
+      db.prepare("UPDATE bookings SET status='running',started_at=?,play_duration=?,checked_in_at=NULL,paused_at=NULL,paused_milliseconds=0,ended_at=NULL,version=version+1,updated_at=? WHERE id=?")
+        .run(Number(input.atMinute),plan.duration,isoNow(),id);
+      const after=getBooking(id);
+      assertAvailable({...after,...occupiedWindow(after,after.date,nowMs(),timeZone)},{ignoreBookingId:id});
+      audit(actor,'booking.status.running','booking',id,booking,after,'Late start: '+input.policy+'; agreed charge preserved');
+      return after;
     });
   }
 
@@ -692,10 +718,10 @@ export function createStore({ filename = 'data/turf.sqlite', sessionIdleMs = 30 
       if (!before || !['upcoming','running'].includes(before.status)) fail(409, 'not_extendable', 'Only upcoming or running bookings can be extended.');
       assertVersion(before, expectedVersion);
       const window = validateWindow({ ...before, end:before.end + minutes });
-      assertAvailable({...window,...occupiedWindow({...before,end:window.end},before.date,nowMs(),timeZone)}, { ignoreBookingId:id });
+      assertAvailable({...window,...occupiedWindow({...before,end:window.end,playDuration:before.playDuration==null?null:before.playDuration+minutes},before.date,nowMs(),timeZone)}, { ignoreBookingId:id });
       const total = priceFor(window);
-      db.prepare(`UPDATE bookings SET end=?,total_amount=?,version=version+1,updated_at=? WHERE id=?`)
-        .run(window.end,total,isoNow(),id);
+      db.prepare(`UPDATE bookings SET end=?,total_amount=?,play_duration=?,version=version+1,updated_at=? WHERE id=?`)
+        .run(window.end,total,before.playDuration==null?null:before.playDuration+minutes,isoNow(),id);
       const after = getBooking(id);
       audit(actor, 'booking.extended', 'booking', id, before, after, `${minutes} minutes`);
       return after;

@@ -147,13 +147,12 @@ export const validContact = value => {
    end, and never later than now — a session cannot begin in the future. Both
    the dialog and the action clamp through this, so the buttons can never offer
    a minute the server will refuse. */
-export const startPlan = (session,at) => sessionStartPlan(session,S,at,isoDate(TODAY),nowMin());
+export const startPlan = (session,at) => sessionStartPlan(session,S,at,isoDate(TODAY),nowMin(),{policy:S.timerPolicy||'scheduled',edits:S.timerEdits||[]});
 export const suggestedStart = session => {
-  const now=clampTimerAt(session,nowMin());
-  return startPlan(session,now).ok?now:clampTimerAt(session,session.start);
+  return clampTimerAt(session,nowMin());
 };
 export const timerFloor = session => session.start - 15;
-export const timerCeil = session => Math.min(Math.floor(nowMin()), session.end - 1);
+export const timerCeil = session => Math.min(Math.floor(nowMin()), 1439);
 export const clampTimerAt = (session, minute) =>
   Math.max(timerFloor(session), Math.min(timerCeil(session), Math.round(minute)));
 

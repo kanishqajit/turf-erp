@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {sessionStartPlan} from '../client/session-start.js';
-import {occupiedOnDay} from '../client/occupancy.js';
+import {startOptionsHtml} from '../client/start-options.js';
+import {occupiedOnDay,playingDuration} from '../client/occupancy.js';
 const user={id:'operator',role:'operator',name:'Operator'};
 const payload=(bookings=[])=>({user,csrfToken:'csrf',state:{bookings,holds:[],blocks:[],settings:{depositAmount:500}}});
 const source=readFileSync(new URL('../mobile.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
 function client(fetch){
   const listeners={};
-  const context=vm.createContext({fetch,Response,URLSearchParams,Date,Map,Set,console,crypto,sessionStartPlan,occupiedOnDay,location:{hostname:'futly.test'},
+  const context=vm.createContext({fetch,Response,URLSearchParams,Date,Map,Set,console,crypto,sessionStartPlan,startOptionsHtml,occupiedOnDay,playingDuration,location:{hostname:'futly.test'},
     matchMedia:()=>({matches:false,addEventListener(){}}),localStorage:{getItem:()=>null,setItem(){}},
     document:{hidden:false,querySelector:()=>null,documentElement:{dataset:{},style:{setProperty(){}}},addEventListener:(name,fn)=>{listeners[name]=fn;}},
     addEventListener(){},setInterval(){},EventSource:class{addEventListener(){}},setTimeout,requestAnimationFrame(){},cancelAnimationFrame(){}});
@@ -66,4 +67,16 @@ test('cancelling on the phone uses release and retains the reason when it fails'
 test('switching phone accounts clears cached history before the new board is shown',async()=>{
   let who=user;const a=client(async()=>Response.json({...payload(),user:who}));await a.boot();a.S.accounts=[{id:'old-private'}];
   who={...user,id:'different'};await a.loadState();assert.equal(a.S.accounts.length,0);assert.equal(a.S.user.id,'different');
+});
+test('phone defaults to keeping the booked end and submits the reviewed schedule when staff choose adjustments',async t=>{
+  t.mock.timers.enable({apis:['Date'],now:new Date(2026,10,11,18,10)});
+  const calls=[];const a=client(async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return Response.json({booking:{id:'late'},desktop:payload()});});
+  const now=new Date(),minute=now.getHours()*60+now.getMinutes(),date=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+  const start=Math.max(0,minute-10),end=start+60;
+  a.S.user=user;a.S.bookings=[{id:'late',date,pitch:0,status:'upcoming',start,end,team:'Late team',version:1},{id:'next',date,pitch:0,status:'upcoming',start:end,end:end+60,team:'Next team',version:2}];
+  const click=dataset=>a.click({target:{closest:()=>({disabled:false,dataset})}});
+  click({act:'start',id:'late'});assert.equal(a.S.timerPolicy,'scheduled');assert.match(a.sheetHtml(),/Keep booked end/);
+  click({act:'timer-policy',v:'shift'});assert.match(a.sheetHtml(),/Next team/);assert.match(a.sheetHtml(),/Confirm changes & start/);
+  click({act:'timer-start',id:'late'});await new Promise(r=>setTimeout(r,10));
+  assert.equal(calls.length,1);assert.equal(calls[0].body.policy,'shift');assert.equal(calls[0].body.adjustments[0].id,'next');assert.equal(calls[0].body.adjustments[0].version,2);assert.equal(calls[0].body.adjustments[0].start,calls[0].body.atMinute+60);
 });

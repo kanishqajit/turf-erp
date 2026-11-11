@@ -28,18 +28,17 @@ import { join } from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => readFile(join(root, name), 'utf8');
 
-const [css, js, rawBackend, sessionStart, occupancy] = await Promise.all([
+const [css, mobile, rawBackend, sessionStart, occupancy, startOptions] = await Promise.all([
   read('mobile.css'), read('mobile.js'), read('demo/backend.js'),
-  read('client/session-start.js'), read('client/occupancy.js'),
+  read('client/session-start.js'), read('client/occupancy.js'), read('client/start-options.js'),
 ]);
 
-/* The backend reaches for the same scheduling helpers the app does. They are
-   ES modules and it is loaded as a classic script, so their source is folded
-   in with the module syntax taken off — one copy of the rule, not two. */
-/* Line-ending agnostic. These files are CRLF in a Windows checkout, and a
-   pattern anchored on `;\n` leaves the import sitting there silently. */
+// Keep the hosted backend and the standalone app on the shared scheduling rules.
+// Strip imports independently of checkout line endings.
 const inline = source => source.replace(/^[ \t]*import[^\n]*\n/gm, '').replaceAll('export ', '');
 const backend = `${inline(occupancy)}\n${inline(sessionStart)}\n${rawBackend}`;
+const js = [inline(occupancy), inline(sessionStart), inline(startOptions), inline(mobile)].join('\n');
+
 
 const HEAD = `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">

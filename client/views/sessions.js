@@ -1,3 +1,4 @@
+import { playingDuration } from '../occupancy.js';
 import { DAY_END, DAY_START, MATCH_STATES, PAY_STATES, PITCHES, SPAN, payShort } from '../constants.js';
 import { durTxt, isoDate, TODAY, bookingMinute, nowMin, minuteAt, pos, rng12, t12 } from '../datetime.js';
 import { collectTotal, esc, money, segCls, operationalSessions, sessionsToday, tintFor, tintVars } from '../domain.js';
@@ -17,17 +18,16 @@ export function buildSessions(){
       const running = s.status === 'running', upcoming = s.status === 'upcoming', done = s.status === 'done';
       const earlier=running&&s.date<isoDate(TODAY);
       const liveStart = (s.startedAt == null ? s.start : s.startedAt)+(s.pausedMilliseconds||0)/60000;
-      const liveEnd = liveStart + (s.end - s.start);
+      const liveEnd = liveStart + playingDuration(s);
       const clockNow=bookingMinute(s,s.pausedAt||null);
       const left = (running ? liveEnd : s.end) - (running?clockNow:now), over = running && left < 0;
       const late = upcoming && now > s.start, elapsedSlot = upcoming && now >= s.end;
       const elapsed = running ? clockNow - liveStart : 0;
-      const pct = running ? Math.max(0, Math.min(100, ((clockNow - liveStart) / (s.end - s.start)) * 100)) : done ? 100 : 0;
+      const pct = running ? Math.max(0, Math.min(100, ((clockNow - liveStart) / playingDuration(s)) * 100)) : done ? 100 : 0;
       const amount = s.amount, unpaid = s.pay !== 'Payment done', duePay = done && unpaid;
       const actions = (running
         ? [{label:s.pausedAt?'Resume':'Pause',act:s.pausedAt?'resume-clock':'pause-clock'},{label:'End match',primary:true,act:'ask-done'},{label:'+30 min',act:'plus30'}]
-        : upcoming ? (elapsedSlot?[{label:'Resolve no-show',primary:true,act:'noshow'}]
-          :[{label:'Start match',primary:true,act:'mark-started'},{label:'No-show',act:'noshow'}])
+        : upcoming ? [{label:'Start match',primary:true,act:'mark-started'},{label:elapsedSlot?'Resolve no-show':'No-show',act:'noshow'}]
         : s.status === 'noshow' ? [{label:'Undo no-show',primary:true,act:'undo-noshow'}] : [])
         .concat(unpaid && s.status !== 'noshow' ? [{label:'Collect money',primary:duePay,act:'collect'}] : []);
       return {
@@ -94,7 +94,7 @@ function timelineHtml(pitchIndex){
   const blocks = sessionsToday().filter(session => session.pitch === pitchIndex).map(session => {
     const running = session.status === 'running';
     const duePay = session.status === 'done' && session.pay !== 'Payment done';
-    const liveEnd = (session.startedAt == null ? session.start : session.startedAt) + (session.end - session.start)+(session.pausedMilliseconds||0)/60000;
+    const liveEnd = (session.startedAt == null ? session.start : session.startedAt) + playingDuration(session)+(session.pausedMilliseconds||0)/60000;
     const clockNow=session.pausedAt?minuteAt(session.pausedAt):now;
     const over = running && liveEnd < clockNow;
     /* Fills come from the strip's own tokens rather than from the card

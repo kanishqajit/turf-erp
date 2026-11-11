@@ -1,3 +1,4 @@
+import { startOptionsHtml } from './start-options.js';
 import { DOWL, MON, PAY_FORM, PAY_MODES, PITCHES } from './constants.js';
 import { dateForAddress, isoDate, TODAY, durTxt, hours, nowMin, rng12, t12 } from './datetime.js';
 import { bookingWindow, clampTimerAt, startPlan, esc, money, priceFor, segCls, sessionById, timerCeil, timerFloor, validContact, weekStart } from './domain.js';
@@ -46,40 +47,21 @@ function confirmDialogHtml(){
    rather than an error after the fact. */
 function timerDialogHtml(){
   const session=sessionById(S.timerAsk),pitch=PITCHES[session.pitch];
-  const now=Math.floor(nowMin()),at=clampTimerAt(session,S.timerAt==null?now:S.timerAt);
-  const duration=session.end-session.start,ends=at+duration;
+  const at=clampTimerAt(session,S.timerAt==null?nowMin():S.timerAt),plan=startPlan(session,at);
   const floor=timerFloor(session),ceil=timerCeil(session);
-  const late=at-session.start,over=ends-session.end,plan=startPlan(session,at);
-  /* Before the booked start there is no "from session start" to offer — that
-     minute has not happened, and a clock cannot begin in the future. The option
-     stays on the dialog stating the minute it would use, but dead, so the
-     choice reads the same whichever side of the start time the team arrives. */
-  const bookedReach=clampTimerAt(session,session.start)===session.start;
-  const onBooked=bookedReach&&at===session.start,onNow=!onBooked&&at===clampTimerAt(session,now);
-  const opt=(mode,label,minute,active,live=true)=>`<button class="${segCls(active,true)} timeropt${live?'':' is-off'}"
-    data-act="timer-mode" data-v="${mode}"${live?'':' disabled'}><b>${label}</b><i>${t12(minute)}</i></button>`;
-  const nudge=(delta,label,enabled)=>`<button class="dbtn timerstep" data-act="timer-nudge" data-v="${delta}"
-    ${enabled?'':'disabled'} aria-label="${delta>0?'Start one minute later':'Start one minute earlier'}">${label}</button>`;
   return `<div class="backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="Start match timer" tabindex="-1"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-    <span class="modal-kicker">Start match timer</span><button class="x" data-act="timer-cancel" aria-label="Close timer dialog">&times;</button></div><div class="plate">
-    <div class="plate-kicker">Clock starts at</div><div class="plate-time">${t12(at)}</div>
-    <div class="plate-dur">${durTxt(duration)} &middot; ends ${t12(ends)}</div>
-    <div class="plate-day">${esc(session.team)}</div>
-    <div class="plate-foot"><span>${esc(pitch.name)} &middot; ${esc(pitch.sub)}</span><b>${rng12(session.start,session.end)}</b></div></div>
-    <span class="dlabel" style="margin:16px 0 6px">Run the clock from</span>
-    <div class="optrow wide">${opt('now','Now',clampTimerAt(session,now),onNow)}${
-      opt('booked','Session start',session.start,onBooked,bookedReach)}</div>
-    <span class="dlabel" style="margin:14px 0 6px">Adjust by the minute</span>
-    <div style="display:flex;align-items:center;gap:8px">${nudge(-1,'&minus;',at>floor)}
-    <div class="timernow">${t12(at)}</div>
-    ${nudge(1,'+',at<ceil)}</div>
-    <p class="dnote">${late>0?'Team went on '+late+' min after the booked start, so the clock ends '+over+' min late at '+t12(ends)+'.'
-      :late<0?'Starting '+(-late)+' min early. The clock runs its full '+durTxt(duration)+' and ends at '+t12(ends)+'.'
-      :'The clock runs the booked slot exactly, ending at '+t12(ends)+'.'}</p><div class="stack">
+    <span class="modal-kicker">Start game</span><button class="x" data-act="timer-cancel" aria-label="Close timer dialog">&times;</button></div>
+    <div class="plate"><div class="plate-kicker">Play begins</div><div class="plate-time">${t12(at)}</div><div class="plate-day">${esc(session.team)}</div>
+    <div class="plate-foot"><span>${esc(pitch.name)}</span><b>Booked ${rng12(session.start,session.end)}</b></div></div>
+    ${startOptionsHtml(session,plan)}
+    <details class="start-origin"><summary>Correct the actual start time</summary><div class="optrow wide">
+    <button class="dbtn" data-act="timer-mode" data-v="now">Start now · ${t12(nowMin())}</button>
+    <button class="dbtn" data-act="timer-mode" data-v="booked"${session.start>nowMin()?' disabled':''}>Booked start</button></div>
+    <div class="optrow"><button class="dbtn" data-act="timer-nudge" data-v="-1"${at<=floor?' disabled':''} aria-label="One minute earlier">−</button><b>${t12(at)}</b><button class="dbtn" data-act="timer-nudge" data-v="1"${at>=ceil?' disabled':''} aria-label="One minute later">+</button></div></details>
     ${!plan.ok?`<p class="dnote" role="alert">${esc(plan.reason)}</p>`:''}
-    ${plan.previous?`<p class="dnote">Confirm that ${esc(plan.previous.team)} has left the pitch. Their clock will end; any unpaid balance stays in Accounts.</p>`:''}
-    <button class="dbtn primary wide sm" data-act="timer-start"${plan.ok&&!S.busy?'':' disabled'}>${plan.previous?'End '+esc(plan.previous.team)+' & start this game':'Start timer'} &middot; ${t12(at)}</button>
-    <button class="dbtn ghost wide" data-act="timer-cancel" style="height:44px">Cancel</button></div></div></div>`;
+    ${plan.previous?`<p class="dnote">Confirm ${esc(plan.previous.team)} has left the pitch. Their clock ends; the outstanding balance stays in Accounts.</p>`:''}
+    <button class="dbtn primary wide sm" data-act="timer-start"${plan.ok&&!S.busy?'':' disabled'}>${plan.adjustments.length?'Confirm changes & start':plan.previous?'End previous & start':'Start now'} · ${t12(at)}</button>
+    <button class="dbtn ghost wide" data-act="timer-cancel">Cancel</button></div></div>`;
 }
 
 function doneDialogHtml(){

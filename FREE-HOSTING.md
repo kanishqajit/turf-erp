@@ -268,3 +268,15 @@ client region headers. Other deployments can omit the setting for automatic
 routing. A pinned-region outage requires changing/removing this setting via
 Git; writes are not blindly replayed in a different region after a timeout.
 See https://supabase.com/docs/guides/functions/regional-invocation.
+
+### Late starts in the staff ERP
+
+Desktop and mobile let staff keep the booked end, use the full booked playing
+duration where available, or preview and adjust subsequent bookings. Staff
+confirm the affected teams’ new times before saving. Gaps absorb delays;
+maintenance, holds, closing time and concurrent changes are checked again in
+the transaction. Charges and recorded payments stay unchanged when times shift.
+
+Migration `20261111153534_late_start_play_duration.sql` adds the nullable playing
+duration to the private booking table. Keep the database migration gate enabled
+for this release. Existing records retain their original clock behavior.

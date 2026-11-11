@@ -323,14 +323,16 @@
       if(b.version!==body.version)return bad(409,'stale_booking','The booking changed. Refresh and review it.');
       if(b.status!=='upcoming')return bad(409,'not_startable','This game is no longer waiting to start.');
       const at=body.atMinute==null?nowMin():Number(body.atMinute);
-      const plan=sessionStartPlan(b,{bookings:DB.bookings,holds:DB.holds,blocks:DB.blocks.filter(x=>x.active)},at,dateFor(0),nowMin());
+      const plan=sessionStartPlan(b,{bookings:DB.bookings,holds:DB.holds,blocks:DB.blocks.filter(x=>x.active)},at,dateFor(0),nowMin(),{policy:body.policy||'full',edits:body.adjustments||[]});
       if(!plan.ok)return bad(409,'booking_conflict',plan.reason);
+      if(body.policy&&((body.adjustments||[]).length!==plan.adjustments.length||plan.adjustments.some(x=>!(body.adjustments||[]).some(y=>y.id===x.id&&y.version===x.version&&y.start===x.start&&y.end===x.end))))return bad(409,'schedule_changed','Review the refreshed schedule.');
       if(plan.previous){
         if(body.previous?.id!==plan.previous.id||body.previous?.version!==plan.previous.version)
           return bad(409,'handover_changed','Confirm the previous game before handing over.');
         Object.assign(plan.previous,{status:'done',endedAt:Math.round(nowMin()),pausedAt:null,checkedInAt:null});touch(plan.previous);
       }
-      Object.assign(b,{status:'running',startedAt:at,endedAt:null,pausedAt:null,pausedMilliseconds:0,checkedInAt:null});
+      for(const change of plan.adjustments){const moved=byId(change.id);Object.assign(moved,{start:change.start,end:change.end});touch(moved);}
+      Object.assign(b,{status:'running',playDuration:plan.duration,startedAt:at,endedAt:null,pausedAt:null,pausedMilliseconds:0,checkedInAt:null});
       return ok({booking:touch(b)});
     }
     if((m=route.match(/^\/api\/bookings\/([^/]+)\/payments\/split$/))&&method==='POST'){
@@ -357,7 +359,7 @@
         b.endedAt = null;
       }
       if (next === 'done') b.endedAt = Math.round(nowMin());
-      if (next === 'upcoming'){ b.startedAt = null; b.endedAt = null; b.pausedAt = null; b.pausedMilliseconds = 0; }
+      if (next === 'upcoming'){ b.playDuration=null;b.startedAt = null; b.endedAt = null; b.pausedAt = null; b.pausedMilliseconds = 0; }
       b.status = next;
       return ok({ booking:touch(b) });
     }
@@ -404,6 +406,7 @@
       if (!b) return bad(404, 'not_found', 'Booking not found.');
       const minutes = Math.round(Number(body.minutes) || 0);
       b.end = Math.min(24 * 60, b.end + minutes);
+      if(b.playDuration!=null)b.playDuration+=minutes;
       b.amount = priceFor(b.pitch, b.start, b.end);
       return ok({ booking:touch(b) });
     }
